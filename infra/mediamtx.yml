@@ -1,0 +1,31 @@
+# MediaMTX config for the central live-view relay.
+#
+# Auth is delegated to our own API (authMethod: http) instead of a shared
+# static secret: MediaMTX POSTs {user, password, action, path, ...} to
+# /api/mediamtx/auth for every publish/read attempt, and our API decides
+# per-request:
+#   - publish (edge agent -> "live/<cameraID>"): password must equal that
+#     camera's site's agent_token (the same token issued when the site was
+#     created — no separate live-view secret needed).
+#   - read (browser -> HLS): password must be a valid user JWT whose holder
+#     is actually a member of a workspace that camera belongs to.
+# See apps/api/internal/handlers/mediamtx_auth_handler.go.
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtspAuthMethods: [basic]
+
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: "*"
+hlsVariant: mpegts
+
+webrtc: no
+srt: no
+
+authMethod: http
+authHTTPAddress: http://api:8080/api/mediamtx/auth
+
+paths:
+  all_others:

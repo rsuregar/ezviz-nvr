@@ -1,0 +1,97 @@
+services:
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: nvr
+      MYSQL_USER: nvr
+      MYSQL_PASSWORD: nvr
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: nvr-admin
+      MINIO_ROOT_PASSWORD: nvr-admin-secret
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 nvr-admin nvr-admin-secret &&
+      mc mb -p local/nvr-recordings &&
+      exit 0
+      "
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    volumes:
+      - ./infra/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8554:8554" # RTSP (edge agents publish here)
+      - "8888:8888" # HLS (dashboard reads here)
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      LISTEN_ADDR: ":8080"
+      MYSQL_DSN: "nvr:nvr@tcp(mysql:3306)/nvr?charset=utf8mb4&parseTime=True&loc=UTC"
+      JWT_SECRET: "dev-secret-change-me"
+      MEDIAMTX_HLS_BASE_URL: "http://localhost:8888"
+      STORAGE_ENCRYPTION_KEY: "" # optional; falls back to a key derived from JWT_SECRET if unset
+      GOOGLE_OAUTH_CLIENT_ID: "${GOOGLE_OAUTH_CLIENT_ID:-}"
+      GOOGLE_OAUTH_CLIENT_SECRET: "${GOOGLE_OAUTH_CLIENT_SECRET:-}"
+      GOOGLE_OAUTH_REDIRECT_URL: "http://localhost:8080/api/oauth/google/callback"
+      WEB_BASE_URL: "http://localhost:3000"
+      RETENTION_INTERVAL_MINUTES: "60"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_BASE_URL: "http://localhost:8080"
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  mysql_data:
+  minio_data:

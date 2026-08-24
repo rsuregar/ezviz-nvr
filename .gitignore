@@ -1,0 +1,16 @@
+node_modules/
+.output/
+.vinxi/
+.tanstack/
+dist/
+*.log
+.env
+.env.local
+
+# Go
+apps/api/api
+apps/api/seed
+apps/edge-agent/agent
+recordings/
+
+.DS_Store
