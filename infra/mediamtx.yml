@@ -18,7 +18,7 @@ rtspAuthMethods: [basic]
 
 hls: yes
 hlsAddress: :8888
-hlsAllowOrigin: "*"
+hlsAllowOrigins: ["*"]
 hlsVariant: mpegts
 
 webrtc: no

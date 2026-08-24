@@ -12,7 +12,7 @@ apps/
   web/          TanStack Start (React) — dashboard admin, storage, live view multiview, audit log, health
 infra/
   mediamtx.yml  Config relay live view (RTSP in, HLS out), auth per-request lewat API
-docker-compose.yml   MySQL + MinIO + MediaMTX + api + web untuk dev lokal
+docker-compose.yml   MySQL + MinIO + MediaMTX + api + web (opsional, lihat "Tanpa Docker" di bawah)
 ```
 
 Model akses: **superadmin** mengelola users, sites, kamera secara global. **Workspace admin** (role per-workspace)
@@ -24,9 +24,15 @@ Edge agent di tiap gedung hanya melakukan koneksi **outbound** (heartbeat, live 
 — tidak perlu buka port atau IP publik di lokasi kamera, jadi 3 gedung dengan 3 ISP berbeda tetap bisa dipantau dari
 satu domain VPS, termasuk dari HP via data seluler.
 
+Semua service (`api`, `edge-agent`, `web`) adalah proses biasa — Go compile jadi satu binary, `web` cuma Node
+server. **Docker itu opsional**, cuma dipakai untuk menyalakan MySQL/MinIO/MediaMTX dengan cepat. Kalau kamu sudah
+punya (atau mau install native) MySQL, semuanya bisa jalan tanpa Docker sama sekali — lihat Opsi B di bawah.
+
 ## Jalan di lokal
 
-Butuh: Docker, Go 1.25+, Node 22+.
+Butuh (kedua opsi): Go 1.25+, Node 22+, `ffmpeg` (buat edge agent).
+
+### Opsi A — dengan Docker (paling cepat)
 
 ```bash
 cp .env.example .env
@@ -34,7 +40,67 @@ docker compose up -d mysql minio minio-init mediamtx
 cd apps/api && go run ./cmd/api
 ```
 
-Di terminal lain, buat akun superadmin pertama (wajib — tidak ada self-registration):
+### Opsi B — tanpa Docker (native)
+
+Semua service database/relay dipasang langsung di mesin kamu lewat Homebrew (macOS) — tidak perlu Docker Desktop
+sama sekali.
+
+1. **MySQL/MariaDB** — kalau belum ada:
+   ```bash
+   brew install mariadb
+   brew services start mariadb
+   ```
+   Buat database & user (ganti `-u root -p` jadi `-u root` saja kalau root belum punya password, mis. instalasi baru):
+   ```bash
+   mysql -u root -p -e "
+   CREATE DATABASE nvr CHARACTER SET utf8mb4;
+   CREATE USER 'nvr'@'localhost' IDENTIFIED BY 'nvr';
+   GRANT ALL PRIVILEGES ON nvr.* TO 'nvr'@'localhost';
+   "
+   ```
+   Default `MYSQL_DSN` di `.env.example` sudah mengarah ke `127.0.0.1:3306` dengan user/password itu, jadi tidak
+   perlu diubah kalau kamu ikuti nama di atas persis. Kalau MySQL native kamu pakai auth socket dan `nvr@127.0.0.1`
+   ditolak, jalankan `CREATE USER 'nvr'@'127.0.0.1' ...` juga (localhost dan 127.0.0.1 dihitung beda user oleh MySQL).
+
+2. **ffmpeg** (wajib untuk edge agent, dan MinIO/MediaMTX di bawah ini opsional):
+   ```bash
+   brew install ffmpeg
+   ```
+
+3. **MediaMTX** (opsional — cuma perlu kalau mau coba live view/multiview):
+   ```bash
+   brew install mediamtx
+   MTX_AUTHHTTPADDRESS=http://localhost:8080/api/mediamtx/auth mediamtx infra/mediamtx.yml
+   ```
+   `infra/mediamtx.yml` defaultnya mengarah ke `http://api:8080/...` (nama service di jaringan Docker) — env var
+   `MTX_AUTHHTTPADDRESS` di atas meng-override itu ke `localhost` supaya nyambung ke API yang jalan native di
+   langkah 5. Ini jalan sebagai proses foreground biasa (bisa juga `brew services start mediamtx` kalau mau di
+   background, tapi itu pakai config default bawaan Homebrew, bukan `infra/mediamtx.yml` kita — untuk dev lebih
+   gampang jalankan foreground dengan config kita langsung seperti di atas).
+
+4. **MinIO** (opsional — cuma perlu kalau mau tes storage S3-compatible; **kalau storage utamamu Google Drive,
+   lewati langkah ini**, tidak perlu service apa pun untuk Google Drive):
+   ```bash
+   brew install minio
+   mkdir -p /tmp/nvr-minio-data
+   MINIO_ROOT_USER=nvr-admin MINIO_ROOT_PASSWORD=nvr-admin-secret minio server /tmp/nvr-minio-data --console-address ":9001"
+   ```
+   Lalu buat bucket sekali lewat console-nya di `http://localhost:9001` (login `nvr-admin`/`nvr-admin-secret`) →
+   buat bucket bernama `nvr-recordings`.
+
+5. **Jalankan API** (di terminal baru, setelah MySQL siap):
+   ```bash
+   cp .env.example .env
+   cd apps/api && go run ./cmd/api
+   ```
+
+Tidak ada `docker compose` sama sekali di jalur ini — MySQL, MediaMTX, dan MinIO semuanya proses native lewat
+Homebrew, langsung `go run`/`npm run dev` untuk sisanya. Kalau kamu hanya mau coba workspace/user/kamera/Google
+Drive tanpa live view, cukup langkah 1, 2, dan 5 saja (skip MediaMTX & MinIO).
+
+### Lanjutan (sama untuk kedua opsi)
+
+Buat akun superadmin pertama (wajib — tidak ada self-registration):
 
 ```bash
 cd apps/api && go run ./cmd/seed --email admin@example.com --password ganti-ini --name Admin
@@ -65,7 +131,9 @@ Buka `http://localhost:3000`, login pakai akun yang baru dibuat.
    MEDIAMTX_HOST=localhost:8554 \
    go run ./cmd/agent
    ```
-   Publish live view otentikasi pakai `AGENT_TOKEN` yang sama (site itu juga) — tidak ada secret terpisah.
+   Publish live view otentikasi pakai `AGENT_TOKEN` yang sama (site itu juga) — tidak ada secret terpisah. Kalau
+   MediaMTX tidak dijalankan (baik Opsi A maupun B), cukup hapus baris `MEDIAMTX_HOST=...` — recording tetap jalan,
+   cuma live view yang tidak aktif.
 5. Buka workspace di dashboard → tombol **Live View** → grid multiview (1x1/2x2/3x3) menampilkan tiap kamera
    sebagai tile HLS (lihat [apps/web/src/routes/workspaces.$workspaceId.live.tsx](apps/web/src/routes/workspaces.$workspaceId.live.tsx)).
    Agent men-push satu kali decode RTSP ke dua tujuan sekaligus (segmen lokal + live ke MediaMTX) lewat `ffmpeg`
@@ -78,6 +146,8 @@ password = JWT user yang memang anggota workspace kamera itu. Jadi tidak ada sat
 kamera di semua workspace.
 
 ### Hubungkan Google Drive (storage utama)
+
+Tidak butuh service lokal apa pun (Docker maupun native) — cukup kredensial OAuth dari Google.
 
 1. Di [Google Cloud Console](https://console.cloud.google.com/): buat project → aktifkan **Google Drive API** →
    buat **OAuth client ID** tipe "Web application" → set Authorized redirect URI ke
@@ -113,11 +183,14 @@ sebagai fallback di bawahnya.
   [apps/api/internal/handlers/audit_handler.go](apps/api/internal/handlers/audit_handler.go).
 - **Health** (tab Admin → Health): status online/offline tiap site (berdasar heartbeat terakhir) dan ringkasan
   status kamera. `GET /healthz` (di luar `/api`) untuk liveness probe infra (dipakai `docker-compose.yml`'s
-  healthcheck).
+  healthcheck kalau pakai Opsi A).
 
-## Deploy ke VPS (dengan CloudPanel)
+## Deploy ke VPS
 
-CloudPanel tidak punya tipe site "Go app" bawaan. Caranya:
+Dua-duanya cocok jalan di belakang **CloudPanel** (yang tidak punya tipe site "Go app" bawaan) — CloudPanel cuma
+urus domain/TLS lewat reverse proxy, proses sebenarnya jalan sendiri di baliknya. Pilih salah satu:
+
+### Opsi A — Docker Compose
 
 1. Jalankan `docker compose up -d --build` di VPS untuk service `mysql` (atau pakai MySQL yang sudah ada di
    CloudPanel — ganti `MYSQL_DSN` supaya arahkan ke situ, tidak perlu container `mysql` lagi), `minio` (kalau masih
@@ -129,9 +202,37 @@ CloudPanel tidak punya tipe site "Go app" bawaan. Caranya:
    balik `api:8080/api/mediamtx/auth` di jaringan Docker internal, tidak perlu diekspos publik.
 5. Update `GOOGLE_OAUTH_REDIRECT_URL` & `WEB_BASE_URL` di env API ke domain produksi, dan tambahkan redirect URI itu
    di Google Cloud Console OAuth client.
-6. Edge agent dijalankan **di tiap lokasi/gedung** (bukan di VPS) — build binary (`go build ./cmd/agent`) atau
-   jalankan sebagai container, set `API_BASE_URL`/`MEDIAMTX_HOST` ke domain publik VPS dan `AGENT_TOKEN` milik site
-   tersebut. Tidak perlu VPN, tidak perlu port terbuka di lokasi kamera.
+
+### Opsi B — Tanpa Docker (native + systemd)
+
+Cocok kalau VPS-nya sudah dikelola CloudPanel dengan MySQL sendiri (seperti yang kamu pakai) — tinggal jalankan
+binary Go dan Node langsung, tanpa lapisan Docker sama sekali.
+
+1. Build binary di VPS (atau build lokal lalu upload — `CGO_ENABLED=0` supaya statis, gampang dipindah antar mesin):
+   ```bash
+   cd apps/api && CGO_ENABLED=0 go build -o /opt/nvr/api ./cmd/api
+   cd apps/edge-agent && CGO_ENABLED=0 go build -o /opt/nvr/agent ./cmd/agent   # hanya kalau site-nya juga di VPS ini
+   cd apps/web && npm ci && npm run build   # hasil: apps/web/.output — jalankan dengan `node .output/server/index.mjs`
+   ```
+2. `apt install mariadb-server ffmpeg` (atau pakai MySQL yang sudah ada di CloudPanel), buat database & user seperti
+   di langkah "Opsi B — tanpa Docker" bagian lokal di atas.
+3. (Opsional, untuk live view) unduh binary MediaMTX dari [rilis GitHub-nya](https://github.com/bluenviron/mediamtx/releases)
+   (satu file, tidak perlu dependency lain — tidak ada paket `apt` resmi), lalu jalankan dengan `infra/mediamtx.yml`.
+   `authHTTPAddress` di config itu default-nya `http://api:8080/...` (nama service Docker) — kalau `api` jalan
+   native di VPS yang sama, override dengan env var `MTX_AUTHHTTPADDRESS=http://localhost:8080/api/mediamtx/auth`
+   seperti di langkah lokal di atas.
+4. Jalankan `api`, `agent` (kalau perlu), dan `web` sebagai **systemd service** masing-masing (`ExecStart` ke
+   binary/`node .output/server/index.mjs`, `EnvironmentFile` ke file `.env` versi produksi) supaya otomatis restart
+   dan jalan saat boot.
+5. CloudPanel: sama seperti Opsi A langkah 2–5 di atas (reverse proxy ke `127.0.0.1:8080` dan `127.0.0.1:3000`,
+   buka port RTSP/HLS MediaMTX di firewall kalau dipakai, update `GOOGLE_OAUTH_REDIRECT_URL`/`WEB_BASE_URL`).
+
+### Edge agent di tiap lokasi (berlaku untuk kedua opsi deploy)
+
+Edge agent **selalu jalan di lokasi/gedung** masing-masing (bukan di VPS, kecuali kameranya kebetulan satu jaringan
+dengan VPS) — build binary (`go build ./cmd/agent`) atau jalankan sebagai container, set `API_BASE_URL`/`MEDIAMTX_HOST`
+ke domain publik VPS dan `AGENT_TOKEN` milik site tersebut. Tidak perlu VPN, tidak perlu port terbuka di lokasi
+kamera — cuma butuh internet outbound biasa.
 
 ## Belum diimplementasikan
 
@@ -150,3 +251,4 @@ CloudPanel tidak punya tipe site "Go app" bawaan. Caranya:
 - Retention/cleanup job otomatis (Drive/S3/MinIO + metadata)
 - Picker pencarian untuk assign kamera ke workspace & tambah anggota (superadmin)
 - Notifikasi webhook (kamera offline, upload gagal) + audit log + health/status tab
+- Jalan tanpa Docker sama sekali (MySQL/MediaMTX/MinIO native lewat Homebrew, atau `apt` di Linux)
