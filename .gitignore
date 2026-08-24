@@ -13,4 +13,8 @@ apps/api/seed
 apps/edge-agent/agent
 recordings/
 
+# MediaMTX (native/no-Docker run auto-generates a self-signed cert here)
+auto.crt
+auto.key
+
 .DS_Store
