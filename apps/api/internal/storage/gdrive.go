@@ -8,6 +8,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -67,4 +68,18 @@ func (d *gdriveDeleter) Stream(ctx context.Context, remoteID string, rangeHeader
 		contentType = "video/mp4"
 	}
 	return resp.Body, contentType, resp.ContentLength, resp.Header.Get("Content-Range"), resp.StatusCode, nil
+}
+
+// Replace implements Replacer: overwrites remoteID's content in place via
+// Drive's update-media call, keeping the same file ID — so the recording's
+// object_key never has to change even though the bytes underneath do.
+// size is unused here (S3/MinIO needs it upfront, Drive's resumable upload
+// doesn't) but kept in the interface so both implementations share one
+// signature.
+func (d *gdriveDeleter) Replace(ctx context.Context, remoteID string, r io.Reader, size int64, contentType string) error {
+	_, err := d.service.Files.Update(remoteID, &drive.File{}).
+		Media(r, googleapi.ContentType(contentType)).
+		Context(ctx).
+		Do()
+	return err
 }

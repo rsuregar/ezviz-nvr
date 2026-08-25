@@ -109,7 +109,21 @@ func runPairingServer(ctx context.Context, apiBaseURL, tokenFilePath string, por
 		log.Printf("  kandidat alamat: http://%s:%d", ip, port)
 	}
 
+	// Best-effort: lets a browser reach this machine via a fixed hostname
+	// instead of needing one of the IPs above, on networks where mDNS
+	// multicast actually reaches across devices. Not fatal if it fails
+	// (e.g. no usable local IP yet) — the IP candidates already logged
+	// above are always the fallback.
+	stopMDNS := func() {}
+	if stop, err := advertiseMDNS(port); err != nil {
+		log.Printf("mDNS tidak aktif (%v) — pakai salah satu alamat IP di atas", err)
+	} else {
+		stopMDNS = stop
+		log.Printf("  atau: http://nvr-agent.local:%d (kalau jaringan ini mendukung mDNS)", port)
+	}
+
 	shutdown := func() {
+		stopMDNS()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)

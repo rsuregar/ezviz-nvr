@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"time"
 
@@ -48,4 +49,12 @@ func (d *s3Deleter) PresignedURL(ctx context.Context, remoteID string, expiry ti
 		return "", err
 	}
 	return u.String(), nil
+}
+
+// Replace implements Replacer: overwrites remoteID's bytes in place — S3
+// has no separate "update" call, PutObject with the same key just
+// overwrites the existing object.
+func (d *s3Deleter) Replace(ctx context.Context, remoteID string, r io.Reader, size int64, contentType string) error {
+	_, err := d.client.PutObject(ctx, d.bucket, remoteID, r, size, minio.PutObjectOptions{ContentType: contentType})
+	return err
 }

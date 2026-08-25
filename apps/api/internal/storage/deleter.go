@@ -40,6 +40,15 @@ type Streamer interface {
 	Stream(ctx context.Context, remoteID string, rangeHeader string) (reader io.ReadCloser, contentType string, size int64, contentRange string, statusCode int, err error)
 }
 
+// Replacer overwrites an existing object's bytes in place, keeping the same
+// identifier (S3 key / Drive file ID) — used by cmd/remux-backfill, the
+// one-time maintenance tool that fixes recordings uploaded before the edge
+// agent started using -movflags +faststart. Replacing in place means
+// Recording.object_key never has to change.
+type Replacer interface {
+	Replace(ctx context.Context, remoteID string, r io.Reader, size int64, contentType string) error
+}
+
 func New(storageType string, config map[string]interface{}) (Deleter, error) {
 	switch storageType {
 	case "s3", "minio":

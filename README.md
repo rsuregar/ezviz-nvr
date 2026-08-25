@@ -210,14 +210,31 @@ Tidak butuh service lokal apa pun (Docker maupun native) — cukup kredensial OA
 
 ### Rekaman: playback, seek, hapus
 
-- Rekaman disegmentasi tiap `SEGMENT_SECONDS` (default 600 = 10 menit) dengan `-movflags +faststart` di sisi agent
-  ([recorder.go](apps/edge-agent/internal/recorder/recorder.go)) — supaya browser bisa mulai putar dari byte
-  pertama tanpa harus mengunduh seluruh file dulu. Tanpa flag ini metadata MP4 ada di ujung file dan `<video>` macet
-  di `readyState: 0` sampai file selesai diunduh penuh — sudah diverifikasi langsung lewat inspeksi byte file nyata.
 - Playback S3/MinIO redirect langsung ke presigned URL (tidak ada byte yang lewat server kita). Google Drive tidak
-  punya presigned URL, jadi di-relay lewat API — termasuk meneruskan `Range` header dari browser, supaya
-  scrubbing/seek di rekaman besar tidak perlu mengunduh ulang dari awal
-  ([storage/gdrive.go](apps/api/internal/storage/gdrive.go)).
+  punya presigned URL, jadi di-relay lewat API — termasuk meneruskan `Range` header dari browser
+  ([storage/gdrive.go](apps/api/internal/storage/gdrive.go)). **Ini yang sebenarnya membuat rekaman bisa diputar
+  sama sekali** — dibuktikan langsung: sebuah rekaman lama yang tadinya macet total di `readyState: 0` (sebelum
+  dukungan Range ada) langsung terbaca metadatanya begitu Range aktif, meski moov atom-nya tetap di posisi asli
+  (lihat poin faststart di bawah). Chrome ternyata bisa mengambil moov dari ujung file lewat Range request kedua,
+  jadi Range sendiri sudah cukup — tidak wajib moov ada di depan.
+- `-movflags +faststart` tetap dipasang di command ffmpeg agent ([recorder.go](apps/edge-agent/internal/recorder/recorder.go))
+  sebagai praktik yang benar, tapi **catatan jujur dari pengecekan langsung**: flag ini rupanya tidak benar-benar
+  memindahkan moov ke depan file saat dipakai bersama muxer `-f segment` (diverifikasi lewat inspeksi struktur box
+  MP4 langsung pada rekaman asli — moov tetap muncul di akhir walau flag-nya sudah diset). Belum digali lebih jauh
+  *kenapa* kombinasi itu tidak bekerja seperti pada remux satu-file biasa, karena toh Range sudah menutup dampaknya
+  terhadap playability. Manfaat yang tersisa dari benar-benar merapikan moov murni soal performa (satu round-trip
+  lebih sedikit saat load pertama), bukan soal rekaman bisa diputar atau tidak.
+- `cmd/remux-backfill` — tool pemeliharaan (bisa dijalankan ulang kapan saja, aman/idempotent) yang mendeteksi
+  posisi moov lewat pembacaan 64KB pertama file (bukan flag di database) dan merapikannya di tempat kalau perlu,
+  lewat `Replacer` di [storage](apps/api/internal/storage) (S3: `PutObject` menimpa key yang sama; Drive:
+  `Files.Update` menimpa isi file yang sama, ID-nya tidak berubah). Sudah diverifikasi ujung-ke-ujung pada rekaman
+  Drive asli: berhasil merapikan, hasil tetap bisa diputar, dan dry-run berikutnya benar-benar melewatkannya
+  (tidak diproses ulang).
+  ```bash
+  cd apps/api && go run ./cmd/remux-backfill --dry-run   # lihat dulu mana yang perlu
+  cd apps/api && go run ./cmd/remux-backfill --limit=5   # coba beberapa dulu
+  cd apps/api && go run ./cmd/remux-backfill             # proses semua
+  ```
 - Timestamp mulai/selesai tiap rekaman diambil dari nama file segment (`%Y%m%d-%H%M%S.mp4`), bukan waktu upload —
   durasi yang tampil di halaman Rekaman jadi akurat, bukan selalu "0 detik".
 - Tombol **Hapus** di halaman Rekaman menghapus dari storage (Drive/S3/MinIO) sekaligus metadatanya — hanya workspace
@@ -226,9 +243,10 @@ Tidak butuh service lokal apa pun (Docker maupun native) — cukup kredensial OA
   ada. Root folder `recordings` bisa dioverride lewat `folder_id` di config storage target — dengan catatan scope
   OAuth `drive.file` yang dipakai hanya bisa melihat/mengelola folder yang **dibuat oleh app ini sendiri**, jadi
   folder pre-existing yang dibuat manual di Drive tidak akan kelihatan.
-- Rekaman yang diupload **sebelum** fix faststart di atas tidak akan otomatis ikut fix-nya (rekaman lama itu sudah
-  di-upload apa adanya) — kalau perlu diputar lagi, satu-satunya cara adalah download lalu remux ulang manual
-  (`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`), belum ada tooling otomatis untuk itu.
+- **Diketahui belum beres**: properti `duration` internal file MP4 hasil segmen kadang salah total (mis. terbaca
+  puluhan jam, bukan ~10 menit) — sudah dikonfirmasi ini bukan akibat `remux-backfill` (muncul juga di rekaman yang
+  belum pernah disentuh tool itu). Tidak menghalangi pemutaran (konten & seek tetap benar, cuma metadata durasi
+  totalnya yang salah), belum digali root cause-nya.
 
 Kalau `GOOGLE_OAUTH_CLIENT_ID` belum diisi, tombol "Hubungkan Google Drive" akan gagal dengan pesan jelas
 (412 Precondition Failed) — form manual (isi `client_id`/`client_secret`/`refresh_token` sendiri) tetap tersedia
@@ -378,17 +396,16 @@ aplikasi — perlu proses backup terpisah yang membaca dari storage target, buka
 - **EZVIZ Cloud API fallback** — tidak dikerjakan (butuh langganan EZVIZ Open Platform berbayar untuk kuota yang
   layak). Agent hanya mendukung `local_rtsp_url` (RTSP lokal, gratis, tanpa batas kuota) — cukup selama kamera EZVIZ
   diaktifkan RTSP lokalnya di app EZVIZ.
-- Audit log & notification channel saat ini terbatas untuk aksi yang mengubah data lewat dashboard/API; belum
-  mencakup semua kemungkinan (mis. login gagal berulang, perubahan lewat query DB langsung).
+- Audit log & notification channel masih terbatas untuk aksi yang mengubah data lewat dashboard/API (login gagal
+  sekarang sudah tercatat — lihat "Sudah selesai"); **perubahan lewat query DB langsung tidak bisa diaudit dari
+  kode aplikasi sama sekali** — itu butuh binlog/trigger di level database (proyek ops terpisah), bukan sesuatu
+  yang bisa "diselesaikan" di sisi app.
 - **App Android TV (WebView)** — sengaja ditunda sampai versi web ini benar-benar settle. Satu syarat yang sudah
   disepakati untuk versi itu nanti: **kiosk mode** (auto-login, langsung buka Live View saat boot, tanpa layar
   login tiap kali TV nyala ulang) — navigasi keyboard/D-pad di Live View sekarang sudah dirancang kompatibel untuk
   itu tanpa kode tambahan.
-- **Remux otomatis rekaman lama** — rekaman yang di-upload sebelum fix `faststart` tidak otomatis diperbaiki (lihat
-  bagian "Rekaman" di atas); belum ada tooling batch untuk itu.
-- **Auto-discovery alamat setup edge agent** (mDNS/`.local` hostname) — sekarang teknisi di lokasi masih perlu tahu
-  IP mesin edge agent (dari log/`journalctl`, atau daftar device di router) untuk buka halaman pairing-nya sekali di
-  awal. Bukan CLI, tapi belum sepenuhnya zero-touch.
+- **Durasi internal rekaman kadang salah** — lihat catatan di bagian "Rekaman" di atas; belum digali root cause-nya
+  (playback & seek tetap benar, cuma metadata durasi total yang keliru).
 
 ## Sudah selesai
 
@@ -397,18 +414,20 @@ aplikasi — perlu proses backup terpisah yang membaca dari storage target, buka
   menentukan siapa yang boleh melihat (lintas site bebas) — kamera bisa dipindah antar site tanpa kehilangan
   riwayat rekaman (Admin → Sites & Kamera → "Pindahkan ke site...")
 - **Onboarding site baru tanpa CLI**: kode pairing sekali pakai (15 menit) yang ditukar lewat halaman setup lokal
-  milik edge agent itu sendiri — tidak perlu copy-paste token ke `.env` secara manual
+  milik edge agent itu sendiri — tidak perlu copy-paste token ke `.env` secara manual. Halaman setup itu juga bisa
+  ditemukan lewat `http://nvr-agent.local:<port>` (mDNS) di jaringan yang mendukungnya, tanpa perlu tahu IP mesin
   ([apps/edge-agent/internal/pairing](apps/edge-agent/internal/pairing))
 - Live view multiview (MediaMTX + grid 1x1 s/d 5x5), auth per-request tanpa shared secret, navigasi keyboard/D-pad
   penuh, kontrol per-tile (jeda, bisukan, snapshot, PiP, toggle resolusi HD/SD lewat sub-stream)
-- **Playback rekaman** dari Drive/S3/MinIO dengan dukungan seek (HTTP Range), file ber-`faststart` supaya langsung
-  bisa diputar, timestamp mulai/selesai akurat, dan hapus rekaman per-item
+- **Playback rekaman** dari Drive/S3/MinIO dengan dukungan seek (HTTP Range — ini yang benar-benar membuat rekaman
+  bisa diputar, lihat bagian "Rekaman"), timestamp mulai/selesai akurat, hapus rekaman per-item, dan
+  `cmd/remux-backfill` untuk merapikan posisi moov atom rekaman lama (optimisasi, bukan syarat playability)
 - Google Drive "Connect" via OAuth resmi (storage utama) + fallback S3/MinIO manual, folder rekaman terstruktur
   `recordings/<kamera>/<tanggal>/<file>`
 - Enkripsi kredensial storage at rest (AES-256-GCM)
 - Retention/cleanup job otomatis (Drive/S3/MinIO + metadata)
 - Picker pencarian untuk assign kamera ke workspace & tambah anggota (superadmin), dengan navigasi keyboard penuh
-- Notifikasi webhook (kamera offline, upload gagal) + audit log + health/status tab
+- Notifikasi webhook (kamera offline, upload gagal) + audit log (termasuk percobaan login gagal) + health/status tab
 - **Aksesibilitas WCAG 2.1 AA**: skip-link, landmark semantik, kontras warna, label form, pola ARIA untuk tab/menu
   dropdown/combobox, dan grid Live View yang benar-benar bisa dinavigasi keyboard (bukan cuma ring visual)
 - Shortcut navigasi global (Live View/Rekaman) yang selalu terlihat dari halaman manapun
