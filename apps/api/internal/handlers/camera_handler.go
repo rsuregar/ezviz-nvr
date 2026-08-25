@@ -1,10 +1,25 @@
 package handlers
 
 import (
+	"time"
+
 	"nvr-ezviz/api/internal/models"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+// siteOnlineThreshold mirrors the 3x-poll-interval heuristic the Admin
+// Health tab already uses for the site-level online/offline badge. Used
+// here for the same reason on cameras: a camera's last-reported status
+// only means anything while the agent that reports it is actually alive.
+// If the site's gone dark, that status is stale, not current — see
+// isSiteOnline/SiteOnline below, which is what lets the dashboard show
+// "tidak diketahui" instead of trusting a possibly-hours-old "online".
+const siteOnlineThreshold = 90 * time.Second
+
+func isSiteOnline(lastSeenAt *time.Time) bool {
+	return lastSeenAt != nil && time.Since(*lastSeenAt) < siteOnlineThreshold
+}
 
 // ListWorkspaceCameras returns every camera visible in a workspace
 // (i.e. assigned to it via camera_workspaces), regardless of which site
@@ -15,11 +30,14 @@ func (h *Handler) ListWorkspaceCameras(c *fiber.Ctx) error {
 	workspaceID := c.Params("workspaceId")
 	var cameras []cameraWithSite
 	if err := h.DB.Table("cameras").
-		Select("cameras.*, sites.name as site_name").
+		Select("cameras.*, sites.name as site_name, sites.last_seen_at as site_last_seen_at").
 		Joins("JOIN camera_workspaces cw ON cw.camera_id = cameras.id").
 		Joins("JOIN sites ON sites.id = cameras.site_id").
 		Where("cw.workspace_id = ?", workspaceID).Find(&cameras).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	for i := range cameras {
+		cameras[i].SiteOnline = isSiteOnline(cameras[i].SiteLastSeenAt)
 	}
 	return c.JSON(cameras)
 }
@@ -36,6 +54,16 @@ func (h *Handler) ListSiteCameras(c *fiber.Ctx) error {
 type cameraWithSite struct {
 	models.Camera
 	SiteName string `json:"site_name"`
+	// SiteLastSeenAt is scan-only (populated by the raw SQL alias in
+	// ListWorkspaceCameras), never serialized — SiteOnline is the derived
+	// value clients actually need.
+	SiteLastSeenAt *time.Time `json:"-"`
+	// SiteOnline tells the client whether Camera.Status is trustworthy
+	// right now. A camera's status is only ever updated by its own site's
+	// edge agent — if that agent has gone dark, status is whatever it
+	// last happened to be, not a current reading, and the UI should show
+	// "tidak diketahui" rather than a stale "online"/"offline".
+	SiteOnline bool `json:"site_online"`
 }
 
 // ListAllCameras backs the workspace "assign camera" picker in the
@@ -51,14 +79,19 @@ func (h *Handler) ListAllCameras(c *fiber.Ctx) error {
 	if err := h.DB.Find(&sites).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	siteNames := make(map[string]string, len(sites))
+	siteByID := make(map[string]models.Site, len(sites))
 	for _, s := range sites {
-		siteNames[s.ID] = s.Name
+		siteByID[s.ID] = s
 	}
 
 	result := make([]cameraWithSite, 0, len(cameras))
 	for _, cam := range cameras {
-		result = append(result, cameraWithSite{Camera: cam, SiteName: siteNames[cam.SiteID]})
+		site := siteByID[cam.SiteID]
+		result = append(result, cameraWithSite{
+			Camera:     cam,
+			SiteName:   site.Name,
+			SiteOnline: isSiteOnline(site.LastSeenAt),
+		})
 	}
 	return c.JSON(result)
 }

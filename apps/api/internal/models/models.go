@@ -96,6 +96,11 @@ type Site struct {
 	// exchanged, regardless of whether the 15-minute expiry was reached.
 	PairingCode          *string    `gorm:"size:16;index" json:"-"`
 	PairingCodeExpiresAt *time.Time `json:"-"`
+	// OfflineNotifiedAt debounces the "site_offline" webhook notification
+	// (see internal/sitecheck): set the first time an outage is noticed,
+	// cleared once the site heartbeats again, so a still-offline site
+	// doesn't re-fire the notification every check cycle.
+	OfflineNotifiedAt *time.Time `json:"-"`
 }
 
 // Camera represents one EZVIZ device physically installed at a Site.
@@ -163,12 +168,27 @@ type Recording struct {
 // operational alerts (camera_offline, upload_failed). Events is a
 // comma-separated list rather than a normalized table — small, fixed
 // vocabulary, not worth a join for.
+// NotificationChannel is a place to deliver camera/site/upload alerts.
+// Provider decides both the destination and the payload shape notify.Send
+// builds — Slack/Discord incoming webhooks reject our plain
+// {event,message,timestamp} JSON unless it's reshaped to {"text": ...}/
+// {"content": ...}, and Telegram has no notion of a "webhook URL" at all
+// (it's a fixed Bot API endpoint keyed by a bot token + chat ID instead).
 type NotificationChannel struct {
 	BaseModel
 	WorkspaceID string `gorm:"type:char(36);index;not null" json:"workspace_id"`
 	Name        string `gorm:"size:255;not null" json:"name"`
-	WebhookURL  string `gorm:"size:1024;not null" json:"webhook_url"`
-	Events      string `gorm:"size:255;not null" json:"events"`
+	// Provider: "generic" (default, our own JSON POSTed as-is to
+	// WebhookURL), "slack", "discord" (WebhookURL, reshaped payload), or
+	// "telegram" (TelegramBotToken + TelegramChatID, no WebhookURL).
+	Provider   string `gorm:"type:varchar(20);not null;default:'generic'" json:"provider"`
+	WebhookURL string `gorm:"size:1024" json:"webhook_url,omitempty"`
+	// TelegramBotToken is encrypted at rest (internal/cryptoutil), same as
+	// StorageTarget.Config — it's a real secret, whoever has it can send
+	// messages as that bot. TelegramChatID isn't sensitive on its own.
+	TelegramBotToken string `gorm:"type:text" json:"-"`
+	TelegramChatID   string `gorm:"size:64" json:"telegram_chat_id,omitempty"`
+	Events           string `gorm:"size:255;not null" json:"events"`
 }
 
 // AuditLog records who did what, for accountability on top of RBAC. Actor

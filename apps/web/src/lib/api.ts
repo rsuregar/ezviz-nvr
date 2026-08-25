@@ -36,6 +36,12 @@ export interface Camera {
   id: string
   site_id: string
   site_name?: string
+  // Whether this camera's own site's edge agent is currently reachable
+  // (heartbeat within the last ~90s) — only present on endpoints that join
+  // site data (ListWorkspaceCameras, ListAllCameras). When false, `status`
+  // below is stale (the agent that would update it has gone dark), so
+  // display code should show "tidak diketahui" instead of trusting it.
+  site_online?: boolean
   name: string
   ezviz_serial: string
   local_rtsp_url: string
@@ -54,11 +60,15 @@ export interface StorageTarget {
   retain_days: number
 }
 
+export type NotificationProvider = 'generic' | 'slack' | 'discord' | 'telegram'
+
 export interface NotificationChannel {
   id: string
   workspace_id: string
   name: string
-  webhook_url: string
+  provider: NotificationProvider
+  webhook_url?: string
+  telegram_chat_id?: string
   events: string
 }
 
@@ -267,7 +277,17 @@ export const api = {
   // notification channels
   listNotificationChannels: (workspaceId: string) =>
     request<NotificationChannel[]>(`/api/workspaces/${workspaceId}/notification-channels`),
-  createNotificationChannel: (workspaceId: string, body: { name: string; webhook_url: string; events: string[] }) =>
+  createNotificationChannel: (
+    workspaceId: string,
+    body: {
+      name: string
+      provider: NotificationProvider
+      webhook_url?: string
+      telegram_bot_token?: string
+      telegram_chat_id?: string
+      events: string[]
+    },
+  ) =>
     request<NotificationChannel>(`/api/workspaces/${workspaceId}/notification-channels`, {
       method: 'POST',
       body: JSON.stringify(body),

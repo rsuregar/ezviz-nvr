@@ -89,7 +89,29 @@ func (h *Handler) notifyForCamera(cameraID, event, message string) {
 	h.DB.Where("workspace_id IN ?", workspaceIDs).Find(&channels)
 	for _, ch := range channels {
 		if notify.HasEvent(ch.Events, event) {
-			notify.Send(ch.WebhookURL, event, message)
+			notify.Send(h.notifyChannel(ch), event, message)
 		}
+	}
+}
+
+// notifyChannel decrypts a stored NotificationChannel's Telegram bot token
+// (encrypted at rest, same as StorageTarget.Config) into the plain struct
+// notify.Send needs. Decryption failing just means Telegram delivery for
+// that channel silently no-ops (empty token) rather than blocking every
+// other channel's notification.
+func (h *Handler) notifyChannel(ch models.NotificationChannel) notify.Channel {
+	botToken := ""
+	if ch.TelegramBotToken != "" {
+		if plain, err := h.decryptConfig(ch.TelegramBotToken); err == nil {
+			botToken = plain
+		} else {
+			log.Printf("notify: failed to decrypt telegram bot token for channel %s: %v", ch.ID, err)
+		}
+	}
+	return notify.Channel{
+		Provider:         ch.Provider,
+		WebhookURL:       ch.WebhookURL,
+		TelegramBotToken: botToken,
+		TelegramChatID:   ch.TelegramChatID,
 	}
 }

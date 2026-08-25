@@ -296,15 +296,31 @@ function HealthTab() {
   }, [])
 
   const sitesOnline = sites.filter((s) => isSiteOnline(s)).length
+  const offlineSites = sites.filter((s) => !isSiteOnline(s))
+  // A camera's status is only meaningful while its own site's agent is
+  // actually reporting — site_online (server-computed, see camera_handler.go)
+  // already reflects that, so trust it over the raw status for these counts.
   const camerasByStatus = {
-    online: cameras.filter((c) => c.status === 'online').length,
-    offline: cameras.filter((c) => c.status === 'offline').length,
-    unknown: cameras.filter((c) => c.status === 'unknown').length,
+    online: cameras.filter((c) => c.site_online !== false && c.status === 'online').length,
+    offline: cameras.filter((c) => c.site_online !== false && c.status === 'offline').length,
+    unknown: cameras.filter((c) => c.site_online === false || c.status === 'unknown').length,
   }
 
   return (
     <div className="space-y-4">
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+
+      {offlineSites.length > 0 && (
+        <div role="alert" className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm space-y-1">
+          {offlineSites.map((s) => (
+            <p key={s.id} className="text-amber-800">
+              <span className="font-medium">Site "{s.name}" sedang offline</span> — mohon periksa apakah PC/edge
+              agent di lokasi tersebut menyala dan terhubung ke internet. Status semua kamera di site ini tidak
+              bisa dipastikan sampai agent-nya kembali online.
+            </p>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Site online" value={`${sitesOnline} / ${sites.length}`} />

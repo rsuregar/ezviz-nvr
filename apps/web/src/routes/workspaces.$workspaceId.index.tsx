@@ -10,6 +10,7 @@ import {
   type Camera,
   type Membership,
   type NotificationChannel,
+  type NotificationProvider,
   type StorageTarget,
   type User,
   type Workspace,
@@ -166,7 +167,7 @@ function CamerasTab({ workspaceId }: { workspaceId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge status={cam.status} />
+              <StatusBadge status={cam.status} siteOnline={cam.site_online} />
               <select
                 aria-label={`Storage untuk ${cam.name}`}
                 value={cam.recording_storage_target_id ?? ''}
@@ -217,9 +218,21 @@ function CamerasTab({ workspaceId }: { workspaceId: string }) {
   )
 }
 
-function StatusBadge({ status }: { status: Camera['status'] }) {
-  const color = status === 'online' ? 'bg-green-100 text-green-700' : status === 'offline' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-  return <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>{status}</span>
+// siteOnline is undefined on endpoints that don't join site data (treated
+// as "trust the status") and false when the camera's own site's edge agent
+// hasn't heartbeat-ed recently — in that case `status` is stale (nobody's
+// been able to update it), so it's shown as unknown rather than whatever
+// it last happened to be.
+function StatusBadge({ status, siteOnline }: { status: Camera['status']; siteOnline?: boolean }) {
+  const effective = siteOnline === false ? 'unknown' : status
+  const color =
+    effective === 'online' ? 'bg-green-100 text-green-700' : effective === 'offline' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+  const label = effective === 'online' ? 'online' : effective === 'offline' ? 'offline' : 'tidak diketahui'
+  return (
+    <span title={siteOnline === false ? 'Site sedang offline — status kamera tidak bisa dipastikan' : undefined} className={`text-xs px-2 py-0.5 rounded-full ${color}`}>
+      {label}
+    </span>
+  )
 }
 
 function StorageTab({ workspaceId }: { workspaceId: string }) {
@@ -463,15 +476,26 @@ function MembersTab({
 
 const NOTIFICATION_EVENTS = [
   { id: 'camera_offline', label: 'Kamera offline' },
+  { id: 'site_offline', label: 'Site/lokasi offline (edge agent tidak terhubung)' },
   { id: 'upload_failed', label: 'Upload gagal' },
 ] as const
+
+const NOTIFICATION_PROVIDERS: { id: NotificationProvider; label: string }[] = [
+  { id: 'generic', label: 'HTTP kustom (generic)' },
+  { id: 'slack', label: 'Slack' },
+  { id: 'discord', label: 'Discord' },
+  { id: 'telegram', label: 'Telegram' },
+]
 
 function NotificationsTab({ workspaceId }: { workspaceId: string }) {
   const [channels, setChannels] = useState<NotificationChannel[]>([])
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
+  const [provider, setProvider] = useState<NotificationProvider>('generic')
   const [webhookUrl, setWebhookUrl] = useState('')
-  const [events, setEvents] = useState<string[]>(['camera_offline', 'upload_failed'])
+  const [telegramBotToken, setTelegramBotToken] = useState('')
+  const [telegramChatId, setTelegramChatId] = useState('')
+  const [events, setEvents] = useState<string[]>(['camera_offline', 'site_offline', 'upload_failed'])
 
   async function load() {
     try {
@@ -489,9 +513,18 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await api.createNotificationChannel(workspaceId, { name, webhook_url: webhookUrl, events })
+      await api.createNotificationChannel(workspaceId, {
+        name,
+        provider,
+        webhook_url: provider === 'telegram' ? undefined : webhookUrl,
+        telegram_bot_token: provider === 'telegram' ? telegramBotToken : undefined,
+        telegram_chat_id: provider === 'telegram' ? telegramChatId : undefined,
+        events,
+      })
       setName('')
       setWebhookUrl('')
+      setTelegramBotToken('')
+      setTelegramChatId('')
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Gagal membuat notification channel')
@@ -506,8 +539,12 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
         {channels.map((ch) => (
           <div key={ch.id} className="p-4 flex items-center justify-between">
             <div>
-              <div className="font-medium text-slate-900">{ch.name}</div>
-              <div className="text-sm text-slate-500">{ch.webhook_url}</div>
+              <div className="font-medium text-slate-900">
+                {ch.name} <span className="text-xs text-slate-500">({ch.provider})</span>
+              </div>
+              <div className="text-sm text-slate-500">
+                {ch.provider === 'telegram' ? `chat_id: ${ch.telegram_chat_id}` : ch.webhook_url}
+              </div>
               <div className="text-xs text-slate-500">{ch.events.split(',').join(', ')}</div>
             </div>
             <button
@@ -521,14 +558,14 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
             </button>
           </div>
         ))}
-        {channels.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada webhook notifikasi.</p>}
+        {channels.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada channel notifikasi.</p>}
       </div>
 
       <form onSubmit={onCreate} className="bg-white border border-slate-200 rounded-lg p-4 max-w-lg space-y-3">
-        <h2 className="font-medium text-slate-900 text-sm">Tambah webhook notifikasi</h2>
+        <h2 className="font-medium text-slate-900 text-sm">Tambah channel notifikasi</h2>
         <p className="text-xs text-slate-500">
-          Terima notifikasi kamera offline / upload gagal ke Slack, Discord, atau endpoint HTTP kustom apa pun
-          (incoming webhook URL).
+          Terima notifikasi kamera offline, site/lokasi offline, atau upload gagal ke Slack, Discord, Telegram,
+          atau endpoint HTTP kustom apa pun.
         </p>
         <input
           required
@@ -538,16 +575,60 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
           onChange={(e) => setName(e.target.value)}
           className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
         />
-        <input
-          required
-          type="url"
-          aria-label="Webhook URL"
-          placeholder="https://hooks.slack.com/services/..."
-          value={webhookUrl}
-          onChange={(e) => setWebhookUrl(e.target.value)}
+        <select
+          aria-label="Tipe channel"
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as NotificationProvider)}
           className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
-        />
-        <div className="flex gap-4">
+        >
+          {NOTIFICATION_PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        {provider === 'telegram' ? (
+          <>
+            <input
+              required
+              aria-label="Token bot Telegram"
+              placeholder="Bot token (dari @BotFather)"
+              value={telegramBotToken}
+              onChange={(e) => setTelegramBotToken(e.target.value)}
+              className="w-full border border-slate-300 rounded px-3 py-2 text-sm font-mono"
+            />
+            <input
+              required
+              aria-label="Chat ID Telegram"
+              placeholder="Chat ID"
+              value={telegramChatId}
+              onChange={(e) => setTelegramChatId(e.target.value)}
+              className="w-full border border-slate-300 rounded px-3 py-2 text-sm font-mono"
+            />
+            <p className="text-xs text-slate-500">
+              Kirim pesan apa saja ke bot-nya dulu, lalu buka{' '}
+              <code className="text-xs">https://api.telegram.org/bot&lt;token&gt;/getUpdates</code> di browser —
+              chat ID ada di field <code className="text-xs">"chat":&#123;"id":...&#125;</code>.
+            </p>
+          </>
+        ) : (
+          <input
+            required
+            type="url"
+            aria-label="Webhook URL"
+            placeholder={
+              provider === 'slack'
+                ? 'https://hooks.slack.com/services/...'
+                : provider === 'discord'
+                  ? 'https://discord.com/api/webhooks/...'
+                  : 'https://endpoint-kamu.com/webhook'
+            }
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+          />
+        )}
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
           {NOTIFICATION_EVENTS.map((ev) => (
             <label key={ev.id} className="flex items-center gap-2 text-sm text-slate-700">
               <input

@@ -283,10 +283,22 @@ sebagai fallback di bawahnya.
 
 ### Notifikasi & audit log
 
-- **Notifikasi webhook** (tab workspace → Notifikasi): daftarkan URL webhook (Slack/Discord incoming webhook, atau
-  endpoint HTTP kustom) dan pilih event (`camera_offline`, `upload_failed`). API mengirim POST JSON
-  `{event, message, timestamp}` — lihat [apps/api/internal/notify](apps/api/internal/notify). Notifikasi kamera
-  offline di-debounce di sisi agent (maks 1x/15 menit per kamera) supaya tidak spam saat retry upload terus gagal.
+- **Notifikasi** (tab workspace → Notifikasi): pilih tipe channel — **Slack**/**Discord** (webhook URL, payload
+  dibentuk sesuai format masing-masing: `{"text":...}` untuk Slack, `{"content":...}` untuk Discord — bukan
+  di-POST mentah-mentah, karena webhook asli Slack/Discord menolak payload yang tidak sesuai skema mereka),
+  **Telegram** (bot token dari [@BotFather](https://t.me/BotFather) + chat ID — Telegram tidak punya konsep
+  "webhook URL" untuk kirim pesan keluar, jadi field-nya beda; bot token dienkripsi at rest sama seperti kredensial
+  storage), atau **HTTP kustom** (endpoint bebas, terima JSON `{event, message, timestamp}` apa adanya) — lihat
+  [apps/api/internal/notify](apps/api/internal/notify). Event yang bisa dipilih: `camera_offline`, `site_offline`,
+  `upload_failed`. Notifikasi kamera offline di-debounce di sisi agent (maks 1x/15 menit per kamera) supaya tidak
+  spam saat retry upload terus gagal; `site_offline` di-debounce di sisi API (sekali per outage, lihat
+  [apps/api/internal/sitecheck](apps/api/internal/sitecheck)) sampai site-nya online lagi.
+- **Status kamera vs status site**: dua sinyal yang sengaja dipisah. `Camera.status` hanya bisa ter-update selama
+  site-nya (edge agent-nya) hidup dan melapor — kalau agent itu mati, status kamera nyangkut di nilai TERAKHIR,
+  bukan reading terkini. Supaya dashboard tidak menampilkan status basi sebagai kalau itu masih berlaku, endpoint
+  yang mengembalikan kamera (`ListWorkspaceCameras`, `ListAllCameras`) juga mengirim `site_online` — kalau `false`,
+  UI menampilkan "tidak diketahui" alih-alih status terakhir yang mungkin sudah tidak relevan. Tab Admin → Health
+  juga menampilkan notice eksplisit tiap kali ada site yang offline.
 - **Audit log** (tab Admin → Audit Log, superadmin): mencatat siapa melakukan apa — create/delete user, workspace,
   site, kamera, storage target, notification channel, assign kamera, ubah membership — lihat
   [apps/api/internal/handlers/audit_handler.go](apps/api/internal/handlers/audit_handler.go).
@@ -440,14 +452,19 @@ aplikasi — perlu proses backup terpisah yang membaca dari storage target, buka
 - Live view multiview (MediaMTX + grid 1x1 s/d 5x5), auth per-request tanpa shared secret, navigasi keyboard/D-pad
   penuh, kontrol per-tile (jeda, bisukan, snapshot, PiP, toggle resolusi HD/SD lewat sub-stream)
 - **Playback rekaman** dari Drive/S3/MinIO dengan dukungan seek (HTTP Range — ini yang benar-benar membuat rekaman
-  bisa diputar, lihat bagian "Rekaman"), timestamp mulai/selesai akurat, hapus rekaman per-item, dan
-  `cmd/remux-backfill` untuk merapikan posisi moov atom rekaman lama (optimisasi, bukan syarat playability)
+  bisa diputar, lihat bagian "Rekaman"), timestamp mulai/selesai akurat, hapus rekaman per-item, label
+  "kamera - site" di-burn-in ke video, dan `cmd/remux-backfill` untuk merapikan posisi moov atom rekaman lama
+  (optimisasi, bukan syarat playability)
 - Google Drive "Connect" via OAuth resmi (storage utama) + fallback S3/MinIO manual, folder rekaman terstruktur
   `recordings/<kamera>/<tanggal>/<file>`
-- Enkripsi kredensial storage at rest (AES-256-GCM)
+- Enkripsi kredensial storage at rest (AES-256-GCM), termasuk token bot Telegram
 - Retention/cleanup job otomatis (Drive/S3/MinIO + metadata)
-- Picker pencarian untuk assign kamera ke workspace & tambah anggota (superadmin), dengan navigasi keyboard penuh
-- Notifikasi webhook (kamera offline, upload gagal) + audit log (termasuk percobaan login gagal) + health/status tab
+- Picker pencarian untuk assign kamera ke workspace & tambah anggota (superadmin), dengan navigasi keyboard penuh —
+  anggota workspace ditampilkan nama/email-nya, bukan UUID mentah
+- **Status kamera yang akurat**: dibedakan tegas dari status site-nya (agent mati ≠ kamera offline — lihat bagian
+  "Notifikasi & audit log"), dengan notice eksplisit + notifikasi proaktif (`site_offline`) kalau ada site down
+- Notifikasi ke Slack/Discord/Telegram/HTTP kustom (kamera offline, site offline, upload gagal) + audit log
+  (termasuk percobaan login gagal) + health/status tab
 - **Aksesibilitas WCAG 2.1 AA**: skip-link, landmark semantik, kontras warna, label form, pola ARIA untuk tab/menu
   dropdown/combobox, dan grid Live View yang benar-benar bisa dinavigasi keyboard (bukan cuma ring visual)
 - Shortcut navigasi global (Live View/Rekaman) yang selalu terlihat dari halaman manapun
