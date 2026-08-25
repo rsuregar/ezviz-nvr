@@ -1,0 +1,16 @@
+[Unit]
+Description=NVR EZVIZ Web
+After=network.target nvr-api.service
+
+[Service]
+Type=simple
+User={{RUN_USER}}
+WorkingDirectory={{INSTALL_DIR}}/web
+EnvironmentFile={{INSTALL_DIR}}/.env
+Environment=PORT=3000
+ExecStart=/usr/bin/env node {{INSTALL_DIR}}/web/server/index.mjs
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

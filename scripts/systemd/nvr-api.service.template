@@ -1,0 +1,15 @@
+[Unit]
+Description=NVR EZVIZ API
+After=network.target mysql.service mariadb.service
+
+[Service]
+Type=simple
+User={{RUN_USER}}
+WorkingDirectory={{INSTALL_DIR}}
+EnvironmentFile={{INSTALL_DIR}}/.env
+ExecStart={{INSTALL_DIR}}/api
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

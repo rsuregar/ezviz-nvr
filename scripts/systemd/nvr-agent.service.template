@@ -1,0 +1,16 @@
+[Unit]
+Description=NVR EZVIZ Edge Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{RUN_USER}}
+WorkingDirectory={{INSTALL_DIR}}
+EnvironmentFile={{INSTALL_DIR}}/.env
+ExecStart={{INSTALL_DIR}}/agent
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
