@@ -5,6 +5,7 @@ package recorder
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 
 	"nvr-ezviz/edge-agent/internal/apiclient"
 	"nvr-ezviz/edge-agent/internal/config"
+	"nvr-ezviz/edge-agent/internal/overlayfont"
 	"nvr-ezviz/edge-agent/internal/uploader"
 )
 
@@ -60,10 +62,10 @@ func (r *Recorder) poll(ctx context.Context) {
 		log.Printf("heartbeat failed: %v", err)
 		return
 	}
-	r.reconcile(ctx, hb.Cameras)
+	r.reconcile(ctx, hb.SiteName, hb.Cameras)
 }
 
-func (r *Recorder) reconcile(ctx context.Context, cameras []apiclient.Camera) {
+func (r *Recorder) reconcile(ctx context.Context, siteName string, cameras []apiclient.Camera) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -79,7 +81,7 @@ func (r *Recorder) reconcile(ctx context.Context, cameras []apiclient.Camera) {
 		}
 		workerCtx, cancel := context.WithCancel(ctx)
 		r.workers[cam.ID] = cancel
-		go r.runCamera(workerCtx, cam)
+		go r.runCamera(workerCtx, siteName, cam)
 	}
 
 	for id, cancel := range r.workers {
@@ -90,7 +92,7 @@ func (r *Recorder) reconcile(ctx context.Context, cameras []apiclient.Camera) {
 	}
 }
 
-func (r *Recorder) runCamera(ctx context.Context, cam apiclient.Camera) {
+func (r *Recorder) runCamera(ctx context.Context, siteName string, cam apiclient.Camera) {
 	dir := filepath.Join(r.cfg.RecordDir, cam.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		log.Printf("camera %s: cannot create record dir: %v", cam.ID, err)
@@ -101,7 +103,7 @@ func (r *Recorder) runCamera(ctx context.Context, cam apiclient.Camera) {
 	if cam.LocalRTSPURLSub != "" {
 		go r.subStreamLoop(ctx, cam)
 	}
-	r.ffmpegLoop(ctx, cam, dir)
+	r.ffmpegLoop(ctx, siteName, cam, dir)
 }
 
 // subStreamLoop pushes the camera's secondary (lower-resolution) stream to
@@ -145,7 +147,7 @@ func (r *Recorder) subStreamLoop(ctx context.Context, cam apiclient.Camera) {
 // ffmpegLoop keeps ffmpeg running against the camera's RTSP feed, segmenting
 // output into fixed-length mp4 files, and restarts it (with backoff) if the
 // camera drops off the network.
-func (r *Recorder) ffmpegLoop(ctx context.Context, cam apiclient.Camera, dir string) {
+func (r *Recorder) ffmpegLoop(ctx context.Context, siteName string, cam apiclient.Camera, dir string) {
 	backoff := 5 * time.Second
 	for {
 		if ctx.Err() != nil {
@@ -153,34 +155,7 @@ func (r *Recorder) ffmpegLoop(ctx context.Context, cam apiclient.Camera, dir str
 		}
 
 		_ = r.api.ReportCameraStatus(ctx, cam.ID, "online")
-		args := []string{
-			"-rtsp_transport", "tcp",
-			"-i", cam.LocalRTSPURL,
-			"-c", "copy",
-			"-f", "segment",
-			"-segment_time", strconv.Itoa(r.cfg.SegmentSeconds),
-			"-reset_timestamps", "1",
-			"-strftime", "1",
-			// Without faststart the moov atom (seek index) lands at the
-			// end of each segment, which browsers can't play from a
-			// plain sequential GET — confirmed against a real recording
-			// where moov sat at 99.7% through the file. The segment
-			// muxer seeks back into the already-written local file to
-			// relocate it, which only works for real files, not pipes.
-			"-movflags", "+faststart",
-			filepath.Join(dir, "%Y%m%d-%H%M%S.mp4"),
-		}
-		// Second output on the same decoded input: push a live copy to the
-		// central MediaMTX relay so the dashboard can watch it (multiview),
-		// without a second RTSP pull from the camera itself.
-		if pushURL := r.cfg.LivePushURL(cam.ID); pushURL != "" {
-			args = append(args,
-				"-c", "copy",
-				"-f", "rtsp",
-				"-rtsp_transport", "tcp",
-				pushURL,
-			)
-		}
+		args := r.buildFFmpegArgs(siteName, cam, dir)
 		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 		cmd.Stdout = nil
 		cmd.Stderr = nil
@@ -199,6 +174,153 @@ func (r *Recorder) ffmpegLoop(ctx context.Context, cam apiclient.Camera, dir str
 		case <-time.After(backoff):
 		}
 	}
+}
+
+// buildFFmpegArgs constructs the two-output ffmpeg command: the recording
+// segment (with a "camera - site" label burned into the video so an
+// exported/downloaded file is still self-identifying outside this app) and,
+// optionally, a copy-only live push to MediaMTX.
+//
+// The recording branch necessarily decodes and re-encodes (drawtext can't
+// operate on compressed bitstream packets) — real CPU cost, unlike the rest
+// of this pipeline, which is deliberately stream-copy-only. The live push
+// stays -c copy and untouched by the filter, so live view latency/CPU cost
+// is unaffected regardless of how many cameras are burning in text.
+func (r *Recorder) buildFFmpegArgs(siteName string, cam apiclient.Camera, dir string) []string {
+	args := []string{
+		"-rtsp_transport", "tcp",
+		"-i", cam.LocalRTSPURL,
+	}
+
+	label := drawtextEscape(cam.Name + " - " + siteName)
+	fontPath, fontErr := overlayfont.Path()
+	switch {
+	case !drawtextAvailable():
+		// Not every ffmpeg build has this — it needs --enable-libfreetype,
+		// which isn't universal (confirmed missing from this project's own
+		// dev machine's Homebrew ffmpeg). Falling back to a plain stream
+		// copy is essential here, not optional: attempting the filter
+		// anyway would make ffmpeg exit with "No such filter", which
+		// ffmpegLoop's retry loop would treat as the camera being offline
+		// — recording would silently stop entirely rather than just
+		// losing a cosmetic label.
+		logOnce("drawtext-unsupported:"+cam.ID, func() {
+			log.Printf("camera %s: ffmpeg build has no drawtext filter (needs --enable-libfreetype) — recording without camera/site label", cam.Name)
+		})
+		args = append(args, "-c", "copy")
+	case fontErr != nil:
+		// Font extraction failing is unusual (temp dir unwritable/full) —
+		// same reasoning, fall back rather than block recording over a
+		// cosmetic overlay.
+		logOnce("drawtext-font-error:"+cam.ID, func() {
+			log.Printf("camera %s: overlay font unavailable (%v), recording without label", cam.Name, fontErr)
+		})
+		args = append(args, "-c", "copy")
+	default:
+		filter := fmt.Sprintf(
+			"[0:v]drawtext=fontfile='%s':text='%s':expansion=none:x=10:y=10:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=6[vrec]",
+			drawtextEscape(fontPath), label,
+		)
+		args = append(args,
+			"-filter_complex", filter,
+			"-map", "[vrec]",
+			"-map", "0:a?",
+			"-c:v", "libx264",
+			"-preset", r.cfg.RecordingPreset,
+			"-crf", strconv.Itoa(r.cfg.RecordingCRF),
+			"-c:a", "copy",
+		)
+	}
+	args = append(args,
+		"-f", "segment",
+		"-segment_time", strconv.Itoa(r.cfg.SegmentSeconds),
+		"-reset_timestamps", "1",
+		"-strftime", "1",
+		// Kept even though it doesn't relocate moov when combined with the
+		// segment muxer (confirmed by inspecting real output) — harmless,
+		// and -movflags without +faststart isn't worth a special case.
+		// Playback doesn't depend on this: the API's Range-request support
+		// is what actually makes recordings playable regardless of moov
+		// position (see README "Rekaman").
+		"-movflags", "+faststart",
+		filepath.Join(dir, "%Y%m%d-%H%M%S.mp4"),
+	)
+
+	// Second output, still from the same input: push an unmodified live
+	// copy to the central MediaMTX relay so the dashboard can watch it, no
+	// second RTSP pull from the camera and no drawtext cost.
+	if pushURL := r.cfg.LivePushURL(cam.ID); pushURL != "" {
+		args = append(args,
+			"-map", "0:v",
+			"-map", "0:a?",
+			"-c", "copy",
+			"-f", "rtsp",
+			"-rtsp_transport", "tcp",
+			pushURL,
+		)
+	}
+	return args
+}
+
+// drawtextEscape escapes the characters that are special inside an ffmpeg
+// filtergraph string (backslash, colon) and drops single quotes rather
+// than deal with drawtext's awkward quote-escaping — camera/site names are
+// short cosmetic labels, not worth the complexity for an edge case.
+func drawtextEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case ':':
+			b.WriteString(`\:`)
+		case '\'':
+			// dropped
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+var (
+	drawtextCheckOnce   sync.Once
+	drawtextIsSupported bool
+)
+
+// drawtextAvailable checks once per process whether this machine's ffmpeg
+// was built with the drawtext filter (needs --enable-libfreetype, which
+// isn't a given — e.g. missing from this project's own dev machine's
+// Homebrew ffmpeg build). `ffmpeg -filters` lists every filter compiled
+// in; checked once since it can't change while this process is running.
+func drawtextAvailable() bool {
+	drawtextCheckOnce.Do(func() {
+		out, err := exec.Command("ffmpeg", "-hide_banner", "-filters").Output()
+		if err != nil {
+			return
+		}
+		drawtextIsSupported = strings.Contains(string(out), " drawtext ")
+	})
+	return drawtextIsSupported
+}
+
+var (
+	logOnceMu   sync.Mutex
+	logOnceSeen = map[string]bool{}
+)
+
+// logOnce runs fn (expected to log something) at most once per distinct
+// key for this process's lifetime — buildFFmpegArgs runs on every ffmpeg
+// restart, so without this a persistently-missing filter/font would log on
+// every retry instead of once.
+func logOnce(key string, fn func()) {
+	logOnceMu.Lock()
+	defer logOnceMu.Unlock()
+	if logOnceSeen[key] {
+		return
+	}
+	logOnceSeen[key] = true
+	fn()
 }
 
 // uploadLoop periodically scans the camera's buffer directory and uploads

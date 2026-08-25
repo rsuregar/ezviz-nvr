@@ -38,6 +38,15 @@ type Config struct {
 	// PairingPort is the local HTTP setup page's port, used only while no
 	// token is available yet (neither AGENT_TOKEN nor TokenFile).
 	PairingPort int
+
+	// RecordingPreset/RecordingCRF tune the libx264 encode the recording
+	// branch needs for burning in the "camera - site" label (drawtext
+	// can't run on compressed packets, so this path can't stay -c copy).
+	// veryfast/23 is a reasonable real-time-capable default on modest
+	// hardware (see README hardware recommendations); slower presets trade
+	// CPU for smaller files at the same quality.
+	RecordingPreset string
+	RecordingCRF    int
 }
 
 func Load() Config {
@@ -52,6 +61,9 @@ func Load() Config {
 
 		TokenFile:   getEnv("TOKEN_FILE", "./agent_token.json"),
 		PairingPort: getEnvInt("PAIRING_PORT", 8091),
+
+		RecordingPreset: getEnv("RECORDING_PRESET", "veryfast"),
+		RecordingCRF:    getEnvInt("RECORDING_CRF", 23),
 	}
 }
 

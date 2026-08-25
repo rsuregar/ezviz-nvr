@@ -46,8 +46,9 @@ type StorageTarget struct {
 }
 
 type HeartbeatResponse struct {
-	SiteID  string   `json:"site_id"`
-	Cameras []Camera `json:"cameras"`
+	SiteID   string   `json:"site_id"`
+	SiteName string   `json:"site_name"`
+	Cameras  []Camera `json:"cameras"`
 }
 
 func (c *Client) Heartbeat(ctx context.Context) (*HeartbeatResponse, error) {

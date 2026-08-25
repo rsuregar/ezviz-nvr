@@ -194,6 +194,26 @@ navigasinya sudah langsung kompatibel tanpa kode tambahan.
 Shortcut **Live View**/**Rekaman** selalu tersedia di header, dari halaman manapun (termasuk Admin) — otomatis
 lompat ke workspace yang terakhir dibuka, atau tampilkan pilihan kalau ada beberapa workspace.
 
+### Label "kamera - site" di rekaman
+
+Tiap rekaman punya teks `<nama kamera> - <nama site>` yang di-burn-in langsung ke pixel video (pojok kiri atas,
+kotak semi-transparan) — jadi tetap kebaca kalau file diunduh dan dibuka di luar aplikasi ini (bukan cuma overlay
+UI browser yang tidak ikut file-nya). Ini **cuma di jalur rekaman**, live view tetap `-c copy` tanpa beban decode/
+encode tambahan (lihat pertimbangannya di [recorder.go](apps/edge-agent/internal/recorder/recorder.go)).
+
+Butuh ffmpeg yang di-build dengan `--enable-libfreetype` (untuk filter `drawtext`) — **tidak semua build punya
+ini** (Homebrew ffmpeg standar di macOS misalnya tidak, dikonfirmasi langsung sesi ini). Kalau tidak ada, agent
+otomatis fallback ke rekaman tanpa label (bukan berhenti merekam) dan mencatat satu baris log sekali saja. Cek:
+```bash
+ffmpeg -hide_banner -filters | grep drawtext
+```
+Kalau kosong tapi tetap mau pakai fitur ini, install ffmpeg dari sumber yang menyertakan freetype (build sendiri
+dengan `--enable-libfreetype`, atau paket distro yang sudah menyertakannya — kebanyakan `apt install ffmpeg` di
+Ubuntu/Debian sudah termasuk).
+
+Kecepatan encode/kualitas bisa diatur lewat env `RECORDING_PRESET` (default `veryfast`) dan `RECORDING_CRF`
+(default `23`, makin kecil makin bagus kualitasnya tapi makin berat).
+
 ### Hubungkan Google Drive (storage utama)
 
 Tidak butuh service lokal apa pun (Docker maupun native) — cukup kredensial OAuth dari Google.

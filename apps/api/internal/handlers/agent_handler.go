@@ -32,6 +32,13 @@ func (h *Handler) AgentHeartbeat(c *fiber.Ctx) error {
 	now := time.Now()
 	h.DB.Model(&models.Site{}).Where("id = ?", siteID).Update("last_seen_at", &now)
 
+	// The agent needs its own site's name to burn a "camera - site" label
+	// into recordings — it only ever learns this from us, whether it got
+	// its token via pairing or a manually-set AGENT_TOKEN, so it has to
+	// come from every heartbeat rather than a one-time pairing response.
+	var site models.Site
+	h.DB.Select("name").First(&site, "id = ?", siteID)
+
 	var cameras []models.Camera
 	if err := h.DB.Where("site_id = ?", siteID).Find(&cameras).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
@@ -57,8 +64,9 @@ func (h *Handler) AgentHeartbeat(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"site_id": siteID,
-		"cameras": result,
+		"site_id":   siteID,
+		"site_name": site.Name,
+		"cameras":   result,
 	})
 }
 
