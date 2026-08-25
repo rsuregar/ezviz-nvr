@@ -134,6 +134,7 @@ function SitesTab() {
   const [error, setError] = useState<string | null>(null)
   const [siteName, setSiteName] = useState('')
   const [newAgentToken, setNewAgentToken] = useState<{ site: string; token: string } | null>(null)
+  const [pairingInfo, setPairingInfo] = useState<{ site: string; code: string; expiresAt: string } | null>(null)
   const [expandedSite, setExpandedSite] = useState<string | null>(null)
 
   async function load() {
@@ -153,6 +154,7 @@ function SitesTab() {
     try {
       const res = await api.createSite(siteName)
       setNewAgentToken({ site: res.site.name, token: res.agent_token })
+      setPairingInfo(null)
       setSiteName('')
       await load()
     } catch (err) {
@@ -170,7 +172,24 @@ function SitesTab() {
             Agent token untuk "{newAgentToken.site}" (simpan sekarang, tidak ditampilkan lagi):
           </p>
           <code className="block bg-white border border-amber-200 rounded px-2 py-1 break-all">{newAgentToken.token}</code>
-          <p className="text-amber-700">Set sebagai env AGENT_TOKEN di edge agent lokasi ini.</p>
+          <p className="text-amber-700">Cara manual: set sebagai env AGENT_TOKEN di edge agent lokasi ini.</p>
+        </div>
+      )}
+
+      {pairingInfo && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm space-y-1">
+          <p className="font-medium text-emerald-800">Kode pairing untuk "{pairingInfo.site}":</p>
+          <code className="block bg-white border border-emerald-200 rounded px-2 py-1 text-lg tracking-widest text-center font-semibold">
+            {pairingInfo.code}
+          </code>
+          <p className="text-emerald-700">
+            Cara tanpa CLI: jalankan edge agent di mesin lokasi itu tanpa AGENT_TOKEN — begitu nyala, ia membuka halaman
+            setup sendiri di jaringan lokal (dicetak di log agent, mis. <code>http://&lt;ip-mesin&gt;:8091</code>). Buka
+            alamat itu di browser, masukkan kode ini.
+          </p>
+          <p className="text-emerald-700">
+            Berlaku sampai {new Date(pairingInfo.expiresAt).toLocaleTimeString('id-ID')} (15 menit, sekali pakai).
+          </p>
         </div>
       )}
 
@@ -195,8 +214,19 @@ function SitesTab() {
                 </button>
                 <button
                   onClick={async () => {
+                    const res = await api.generateSitePairingCode(s.id)
+                    setPairingInfo({ site: s.name, code: res.pairing_code, expiresAt: res.expires_at })
+                    setNewAgentToken(null)
+                  }}
+                  className="text-xs text-slate-600"
+                >
+                  Buat kode pairing
+                </button>
+                <button
+                  onClick={async () => {
                     const res = await api.regenerateSiteToken(s.id)
                     setNewAgentToken({ site: s.name, token: res.agent_token })
+                    setPairingInfo(null)
                   }}
                   className="text-xs text-slate-600"
                 >

@@ -30,6 +30,15 @@ func New(h *handlers.Handler, db *gorm.DB) *fiber.App {
 	api.Get("/oauth/google/callback", h.GoogleOAuthCallback)
 	api.Post("/mediamtx/auth", h.MediaMTXAuth)
 
+	// Unauthenticated on purpose (a freshly-installed edge agent has no
+	// token to authenticate with yet — that's the problem it solves).
+	// Registered before the "/agent" group below and its RequireAgentToken
+	// middleware: same Fiber registration-order gotcha as the routes
+	// further down — a route matching that group's prefix registered
+	// afterwards would get wrapped by it regardless of which Go variable
+	// it's declared through.
+	api.Post("/agent/pair", h.AgentPair)
+
 	// --- edge agent (site token auth, not user JWT) ---
 	agent := api.Group("/agent", middleware.RequireAgentToken(db))
 	agent.Post("/heartbeat", h.AgentHeartbeat)
@@ -100,6 +109,7 @@ func New(h *handlers.Handler, db *gorm.DB) *fiber.App {
 	admin.Post("/sites", h.CreateSite)
 	admin.Delete("/sites/:id", h.DeleteSite)
 	admin.Post("/sites/:id/regenerate-token", h.RegenerateSiteToken)
+	admin.Post("/sites/:id/pairing-code", h.GenerateSitePairingCode)
 	admin.Get("/audit-log", h.ListAuditLog)
 	admin.Get("/cameras", h.ListAllCameras)
 	admin.Get("/sites/:siteId/cameras", h.ListSiteCameras)

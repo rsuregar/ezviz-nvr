@@ -29,6 +29,15 @@ type Config struct {
 	// MediaMTXHost is the central live-view relay's RTSP address
 	// (host:port). Leave empty to disable live push entirely.
 	MediaMTXHost string
+
+	// TokenFile persists the AgentToken once it's been obtained through
+	// pairing (see internal/pairing), so pairing only ever has to happen
+	// once per install — restarts read it back instead of re-pairing.
+	// Ignored entirely when AGENT_TOKEN is set directly.
+	TokenFile string
+	// PairingPort is the local HTTP setup page's port, used only while no
+	// token is available yet (neither AGENT_TOKEN nor TokenFile).
+	PairingPort int
 }
 
 func Load() Config {
@@ -40,6 +49,9 @@ func Load() Config {
 		PollInterval:   time.Duration(getEnvInt("POLL_INTERVAL_SECONDS", 30)) * time.Second,
 
 		MediaMTXHost: getEnv("MEDIAMTX_HOST", ""),
+
+		TokenFile:   getEnv("TOKEN_FILE", "./agent_token.json"),
+		PairingPort: getEnvInt("PAIRING_PORT", 8091),
 	}
 }
 

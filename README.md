@@ -134,6 +134,13 @@ Buka `http://localhost:3000`, login pakai akun yang baru dibuat.
    Publish live view otentikasi pakai `AGENT_TOKEN` yang sama (site itu juga) — tidak ada secret terpisah. Kalau
    MediaMTX tidak dijalankan (baik Opsi A maupun B), cukup hapus baris `MEDIAMTX_HOST=...` — recording tetap jalan,
    cuma live view yang tidak aktif.
+
+   **Alternatif tanpa copy-paste token ke `.env`**: jalankan `go run ./cmd/agent` tanpa `AGENT_TOKEN` sama sekali.
+   Agent akan membuka halaman setup sendiri di jaringan lokal (alamatnya dicetak di log, mis.
+   `http://192.168.1.5:8091`) dan menunggu di sana. Di Admin → Sites & Kamera, klik **Buat kode pairing** pada site
+   yang dituju (berlaku 15 menit, sekali pakai), lalu masukkan kode itu di halaman setup tadi — agent otomatis
+   mendapatkan token asli dan menyimpannya secara lokal (`agent_token.json`, ganti lewat env `TOKEN_FILE`), jadi
+   restart berikutnya langsung jalan tanpa pairing ulang.
 5. Buka workspace di dashboard → tombol **Live View** → grid multiview (1x1/2x2/3x3) menampilkan tiap kamera
    sebagai tile HLS (lihat [apps/web/src/routes/workspaces.$workspaceId.live.tsx](apps/web/src/routes/workspaces.$workspaceId.live.tsx)).
    Agent men-push satu kali decode RTSP ke dua tujuan sekaligus (segmen lokal + live ke MediaMTX) lewat `ffmpeg`

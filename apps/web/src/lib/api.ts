@@ -291,6 +291,8 @@ export const api = {
   deleteSite: (id: string) => request<void>(`/api/sites/${id}`, { method: 'DELETE' }),
   regenerateSiteToken: (id: string) =>
     request<{ agent_token: string }>(`/api/sites/${id}/regenerate-token`, { method: 'POST' }),
+  generateSitePairingCode: (id: string) =>
+    request<{ pairing_code: string; expires_at: string }>(`/api/sites/${id}/pairing-code`, { method: 'POST' }),
 }
 
 export { ApiError }

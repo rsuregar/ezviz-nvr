@@ -83,6 +83,15 @@ type Site struct {
 	Name       string     `gorm:"size:255;not null" json:"name"`
 	AgentToken string     `gorm:"size:255;uniqueIndex;not null" json:"-"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
+	// PairingCode/PairingCodeExpiresAt back a short-lived, human-typeable
+	// alternative to copying AgentToken into a .env file by hand: an admin
+	// generates one here, and a freshly-installed edge agent with no token
+	// yet exchanges it for the real AgentToken via POST /api/agent/pair
+	// (see AgentPair) through its own local setup web page — no CLI/file
+	// editing on the machine at all. Single-use: cleared the moment it's
+	// exchanged, regardless of whether the 15-minute expiry was reached.
+	PairingCode          *string    `gorm:"size:16;index" json:"-"`
+	PairingCodeExpiresAt *time.Time `json:"-"`
 }
 
 // Camera represents one EZVIZ device physically installed at a Site.
