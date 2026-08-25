@@ -213,7 +213,7 @@ function SitesTab() {
                 </button>
               </div>
             </div>
-            {expandedSite === s.id && <SiteCameras siteId={s.id} panelId={`site-cameras-${s.id}`} />}
+            {expandedSite === s.id && <SiteCameras siteId={s.id} panelId={`site-cameras-${s.id}`} sites={sites} />}
           </div>
         ))}
         {sites.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada site.</p>}
@@ -371,9 +371,20 @@ const EZVIZ_STREAM_PATHS = [
   { label: 'Gaya Hikvision', path: '/Streaming/Channels/101' },
 ] as const
 
-function SiteCameras({ siteId, panelId }: { siteId: string; panelId: string }) {
+function SiteCameras({ siteId, panelId, sites }: { siteId: string; panelId: string; sites: Site[] }) {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [error, setError] = useState<string | null>(null)
+  const otherSites = sites.filter((s) => s.id !== siteId)
+
+  async function moveCamera(cameraId: string, targetSiteId: string) {
+    if (!targetSiteId) return
+    try {
+      await api.moveCameraToSite(cameraId, targetSiteId)
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Gagal memindahkan kamera')
+    }
+  }
   const [name, setName] = useState('')
   const [serial, setSerial] = useState('')
   const [verCode, setVerCode] = useState('')
@@ -455,15 +466,33 @@ function SiteCameras({ siteId, panelId }: { siteId: string; panelId: string }) {
                 {cam.local_rtsp_url_sub && <span className="text-slate-500"> · sub-stream ada</span>}
               </div>
             </div>
-            <button
-              onClick={async () => {
-                await api.deleteCamera(cam.id)
-                await load()
-              }}
-              className="text-xs text-red-600"
-            >
-              Hapus
-            </button>
+            <div className="flex items-center gap-3">
+              {otherSites.length > 0 && (
+                <select
+                  aria-label={`Pindahkan ${cam.name} ke site lain`}
+                  title="RTSP kamera ini harus tetap bisa dijangkau dari LAN site tujuan — pindah site tidak mengubah alamat RTSP-nya"
+                  value=""
+                  onChange={(e) => moveCamera(cam.id, e.target.value)}
+                  className="text-xs border border-slate-300 rounded px-2 py-1 text-slate-600"
+                >
+                  <option value="">Pindahkan ke site…</option>
+                  {otherSites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                onClick={async () => {
+                  await api.deleteCamera(cam.id)
+                  await load()
+                }}
+                className="text-xs text-red-600"
+              >
+                Hapus
+              </button>
+            </div>
           </div>
         ))}
         {cameras.length === 0 && <p className="py-2 text-sm text-slate-500">Belum ada kamera di site ini.</p>}

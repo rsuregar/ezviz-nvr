@@ -70,6 +70,10 @@ type createCameraRequest struct {
 	LocalRTSPURL    string `json:"local_rtsp_url"`
 	LocalRTSPURLSub string `json:"local_rtsp_url_sub"`
 	ChannelNo       int    `json:"channel_no"`
+	// SiteID is update-only (see UpdateCamera) — moves a camera to a
+	// different physical location's edge agent. Ignored on create, which
+	// already takes the site from the :siteId route param.
+	SiteID string `json:"site_id"`
 }
 
 func (h *Handler) CreateCamera(c *fiber.Ctx) error {
@@ -120,8 +124,24 @@ func (h *Handler) UpdateCamera(c *fiber.Ctx) error {
 	if req.ChannelNo != 0 {
 		updates["channel_no"] = req.ChannelNo
 	}
+	if req.SiteID != "" {
+		var site models.Site
+		if err := h.DB.First(&site, "id = ?", req.SiteID).Error; err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "target site not found")
+		}
+		updates["site_id"] = req.SiteID
+		// The old site's edge agent will stop reporting status for this
+		// camera the moment it drops out of its next heartbeat's camera
+		// list; the new site's agent won't report anything until it picks
+		// the camera up on its own next poll. Reset to unknown rather than
+		// leaving a stale online/offline from the site it just left.
+		updates["status"] = models.CameraUnknown
+	}
 	if err := h.DB.Model(&models.Camera{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if req.SiteID != "" {
+		h.audit(c, "camera.move_site", "camera", id, nil, "moved to site "+req.SiteID)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

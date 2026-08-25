@@ -230,6 +230,8 @@ export const api = {
       channel_no?: number
     },
   ) => request<Camera>(`/api/sites/${siteId}/cameras`, { method: 'POST', body: JSON.stringify(body) }),
+  moveCameraToSite: (cameraId: string, siteId: string) =>
+    request<void>(`/api/cameras/${cameraId}`, { method: 'PUT', body: JSON.stringify({ site_id: siteId }) }),
   deleteCamera: (id: string) => request<void>(`/api/cameras/${id}`, { method: 'DELETE' }),
   assignCamera: (workspaceId: string, cameraId: string) =>
     request<void>(`/api/workspaces/${workspaceId}/cameras/${cameraId}/assign`, { method: 'POST' }),
