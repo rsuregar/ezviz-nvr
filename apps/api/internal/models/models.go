@@ -71,7 +71,11 @@ type UserWorkspace struct {
 	Role        WorkspaceRole `gorm:"type:varchar(20);not null" json:"role"`
 	CreatedAt   time.Time     `json:"created_at"`
 
-	User      User      `json:"-"`
+	// User is exposed (unlike Workspace below, which the client already
+	// knows from context) so the members list can show a name/email
+	// instead of a raw user_id UUID — safe to serialize as-is since
+	// User.PasswordHash already carries its own json:"-".
+	User      User      `json:"User"`
 	Workspace Workspace `json:"-"`
 }
 
