@@ -29,9 +29,15 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 
 	var user models.User
 	if err := h.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		// No user row to attach as actor, so the attempted email goes in
+		// target_id instead — still traceable in the audit log without
+		// revealing whether that email exists (same "invalid credentials"
+		// either way).
+		h.auditAs("", "auth.login_failed", "user", req.Email, nil, "user not found")
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 	if !auth.CheckPassword(user.PasswordHash, req.Password) {
+		h.auditAs(user.ID, "auth.login_failed", "user", user.Email, nil, "wrong password")
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 

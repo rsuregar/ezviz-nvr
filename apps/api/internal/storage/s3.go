@@ -3,6 +3,9 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/url"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -36,4 +39,22 @@ func newS3Deleter(config map[string]interface{}) (*s3Deleter, error) {
 
 func (d *s3Deleter) Delete(ctx context.Context, remoteID string) error {
 	return d.client.RemoveObject(ctx, d.bucket, remoteID, minio.RemoveObjectOptions{})
+}
+
+// PresignedURL implements Getter: the browser is redirected straight to
+// the bucket, so playback traffic never touches our API server.
+func (d *s3Deleter) PresignedURL(ctx context.Context, remoteID string, expiry time.Duration) (string, error) {
+	u, err := d.client.PresignedGetObject(ctx, d.bucket, remoteID, expiry, url.Values{})
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
+// Replace implements Replacer: overwrites remoteID's bytes in place — S3
+// has no separate "update" call, PutObject with the same key just
+// overwrites the existing object.
+func (d *s3Deleter) Replace(ctx context.Context, remoteID string, r io.Reader, size int64, contentType string) error {
+	_, err := d.client.PutObject(ctx, d.bucket, remoteID, r, size, minio.PutObjectOptions{ContentType: contentType})
+	return err
 }

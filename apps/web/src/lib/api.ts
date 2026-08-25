@@ -35,9 +35,17 @@ export interface Site {
 export interface Camera {
   id: string
   site_id: string
+  site_name?: string
+  // Whether this camera's own site's edge agent is currently reachable
+  // (heartbeat within the last ~90s) — only present on endpoints that join
+  // site data (ListWorkspaceCameras, ListAllCameras). When false, `status`
+  // below is stale (the agent that would update it has gone dark), so
+  // display code should show "tidak diketahui" instead of trusting it.
+  site_online?: boolean
   name: string
   ezviz_serial: string
   local_rtsp_url: string
+  local_rtsp_url_sub?: string
   channel_no: number
   status: 'online' | 'offline' | 'unknown'
   recording_storage_target_id: string | null
@@ -52,11 +60,15 @@ export interface StorageTarget {
   retain_days: number
 }
 
+export type NotificationProvider = 'generic' | 'slack' | 'discord' | 'telegram'
+
 export interface NotificationChannel {
   id: string
   workspace_id: string
   name: string
-  webhook_url: string
+  provider: NotificationProvider
+  webhook_url?: string
+  telegram_chat_id?: string
   events: string
 }
 
@@ -111,6 +123,13 @@ export function googleOAuthStartUrl(workspaceId: string, name: string) {
   const token = getAccessToken()
   const params = new URLSearchParams({ name, access_token: token ?? '' })
   return `${API_BASE_URL}/api/workspaces/${workspaceId}/oauth/google/start?${params.toString()}`
+}
+
+// A <video src="..."> can't send an Authorization header, so like the OAuth
+// start link above, this carries the token as a query param instead.
+export function recordingStreamUrl(workspaceId: string, cameraId: string, recordingId: string) {
+  const params = new URLSearchParams({ access_token: getAccessToken() ?? '' })
+  return `${API_BASE_URL}/api/workspaces/${workspaceId}/cameras/${cameraId}/recordings/${recordingId}/stream?${params.toString()}`
 }
 
 class ApiError extends Error {
@@ -212,8 +231,17 @@ export const api = {
   listAllCameras: () => request<(Camera & { site_name: string })[]>('/api/cameras'),
   createCamera: (
     siteId: string,
-    body: { name: string; ezviz_serial: string; ezviz_verification_code?: string; local_rtsp_url?: string; channel_no?: number },
+    body: {
+      name: string
+      ezviz_serial: string
+      ezviz_verification_code?: string
+      local_rtsp_url?: string
+      local_rtsp_url_sub?: string
+      channel_no?: number
+    },
   ) => request<Camera>(`/api/sites/${siteId}/cameras`, { method: 'POST', body: JSON.stringify(body) }),
+  moveCameraToSite: (cameraId: string, siteId: string) =>
+    request<void>(`/api/cameras/${cameraId}`, { method: 'PUT', body: JSON.stringify({ site_id: siteId }) }),
   deleteCamera: (id: string) => request<void>(`/api/cameras/${id}`, { method: 'DELETE' }),
   assignCamera: (workspaceId: string, cameraId: string) =>
     request<void>(`/api/workspaces/${workspaceId}/cameras/${cameraId}/assign`, { method: 'POST' }),
@@ -226,6 +254,8 @@ export const api = {
     }),
   listCameraRecordings: (workspaceId: string, cameraId: string) =>
     request<Recording[]>(`/api/workspaces/${workspaceId}/cameras/${cameraId}/recordings`),
+  deleteRecording: (workspaceId: string, cameraId: string, recordingId: string) =>
+    request<void>(`/api/workspaces/${workspaceId}/cameras/${cameraId}/recordings/${recordingId}`, { method: 'DELETE' }),
 
   // live view
   getLiveConfig: (workspaceId: string) =>
@@ -247,7 +277,17 @@ export const api = {
   // notification channels
   listNotificationChannels: (workspaceId: string) =>
     request<NotificationChannel[]>(`/api/workspaces/${workspaceId}/notification-channels`),
-  createNotificationChannel: (workspaceId: string, body: { name: string; webhook_url: string; events: string[] }) =>
+  createNotificationChannel: (
+    workspaceId: string,
+    body: {
+      name: string
+      provider: NotificationProvider
+      webhook_url?: string
+      telegram_bot_token?: string
+      telegram_chat_id?: string
+      events: string[]
+    },
+  ) =>
     request<NotificationChannel>(`/api/workspaces/${workspaceId}/notification-channels`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -271,6 +311,8 @@ export const api = {
   deleteSite: (id: string) => request<void>(`/api/sites/${id}`, { method: 'DELETE' }),
   regenerateSiteToken: (id: string) =>
     request<{ agent_token: string }>(`/api/sites/${id}/regenerate-token`, { method: 'POST' }),
+  generateSitePairingCode: (id: string) =>
+    request<{ pairing_code: string; expires_at: string }>(`/api/sites/${id}/pairing-code`, { method: 'POST' }),
 }
 
 export { ApiError }

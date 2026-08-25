@@ -71,7 +71,11 @@ type UserWorkspace struct {
 	Role        WorkspaceRole `gorm:"type:varchar(20);not null" json:"role"`
 	CreatedAt   time.Time     `json:"created_at"`
 
-	User      User      `json:"-"`
+	// User is exposed (unlike Workspace below, which the client already
+	// knows from context) so the members list can show a name/email
+	// instead of a raw user_id UUID — safe to serialize as-is since
+	// User.PasswordHash already carries its own json:"-".
+	User      User      `json:"User"`
 	Workspace Workspace `json:"-"`
 }
 
@@ -80,21 +84,40 @@ type UserWorkspace struct {
 // a site's cameras get assigned into whichever workspaces need to see them.
 type Site struct {
 	BaseModel
-	Name       string `gorm:"size:255;not null" json:"name"`
-	AgentToken string `gorm:"size:255;uniqueIndex;not null" json:"-"`
+	Name       string     `gorm:"size:255;not null" json:"name"`
+	AgentToken string     `gorm:"size:255;uniqueIndex;not null" json:"-"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
+	// PairingCode/PairingCodeExpiresAt back a short-lived, human-typeable
+	// alternative to copying AgentToken into a .env file by hand: an admin
+	// generates one here, and a freshly-installed edge agent with no token
+	// yet exchanges it for the real AgentToken via POST /api/agent/pair
+	// (see AgentPair) through its own local setup web page — no CLI/file
+	// editing on the machine at all. Single-use: cleared the moment it's
+	// exchanged, regardless of whether the 15-minute expiry was reached.
+	PairingCode          *string    `gorm:"size:16;index" json:"-"`
+	PairingCodeExpiresAt *time.Time `json:"-"`
+	// OfflineNotifiedAt debounces the "site_offline" webhook notification
+	// (see internal/sitecheck): set the first time an outage is noticed,
+	// cleared once the site heartbeats again, so a still-offline site
+	// doesn't re-fire the notification every check cycle.
+	OfflineNotifiedAt *time.Time `json:"-"`
 }
 
 // Camera represents one EZVIZ device physically installed at a Site.
 type Camera struct {
 	BaseModel
-	SiteID       string       `gorm:"type:char(36);index;not null" json:"site_id"`
-	Name         string       `gorm:"size:255;not null" json:"name"`
-	EzvizSerial  string       `gorm:"size:64;not null" json:"ezviz_serial"`
-	EzvizVerCode string       `gorm:"size:64" json:"-"`
-	LocalRTSPURL string       `gorm:"size:512" json:"local_rtsp_url,omitempty"`
-	ChannelNo    int          `gorm:"default:1" json:"channel_no"`
-	Status       CameraStatus `gorm:"type:varchar(20);default:'unknown'" json:"status"`
+	SiteID       string `gorm:"type:char(36);index;not null" json:"site_id"`
+	Name         string `gorm:"size:255;not null" json:"name"`
+	EzvizSerial  string `gorm:"size:64;not null" json:"ezviz_serial"`
+	EzvizVerCode string `gorm:"size:64" json:"-"`
+	LocalRTSPURL string `gorm:"size:512" json:"local_rtsp_url,omitempty"`
+	// LocalRTSPURLSub is the camera's secondary/sub stream (lower
+	// resolution, less bandwidth) — optional. When set, the edge agent
+	// pushes it to MediaMTX as an extra live-view-only quality option
+	// alongside the main stream; it's never recorded to storage.
+	LocalRTSPURLSub string       `gorm:"size:512" json:"local_rtsp_url_sub,omitempty"`
+	ChannelNo       int          `gorm:"default:1" json:"channel_no"`
+	Status          CameraStatus `gorm:"type:varchar(20);default:'unknown'" json:"status"`
 	// RecordingStorageTargetID picks which single StorageTarget this camera's
 	// segments upload to. A camera can be visible in several workspaces, but
 	// it is only physically recorded once, so storage is bound per-camera
@@ -132,25 +155,40 @@ type StorageTarget struct {
 // back without listing the object storage bucket directly.
 type Recording struct {
 	BaseModel
-	CameraID      string     `gorm:"type:char(36);index;not null" json:"camera_id"`
-	StorageTargetID string   `gorm:"type:char(36);index;not null" json:"storage_target_id"`
-	ObjectKey     string     `gorm:"size:1024;not null" json:"object_key"`
-	StartedAt     time.Time  `json:"started_at"`
-	EndedAt       *time.Time `json:"ended_at"`
-	SizeBytes     int64      `json:"size_bytes"`
-	Status        string     `gorm:"type:varchar(20);default:'uploaded'" json:"status"`
+	CameraID        string     `gorm:"type:char(36);index;not null" json:"camera_id"`
+	StorageTargetID string     `gorm:"type:char(36);index;not null" json:"storage_target_id"`
+	ObjectKey       string     `gorm:"size:1024;not null" json:"object_key"`
+	StartedAt       time.Time  `json:"started_at"`
+	EndedAt         *time.Time `json:"ended_at"`
+	SizeBytes       int64      `json:"size_bytes"`
+	Status          string     `gorm:"type:varchar(20);default:'uploaded'" json:"status"`
 }
 
 // NotificationChannel is a workspace-scoped webhook destination for
 // operational alerts (camera_offline, upload_failed). Events is a
 // comma-separated list rather than a normalized table — small, fixed
 // vocabulary, not worth a join for.
+// NotificationChannel is a place to deliver camera/site/upload alerts.
+// Provider decides both the destination and the payload shape notify.Send
+// builds — Slack/Discord incoming webhooks reject our plain
+// {event,message,timestamp} JSON unless it's reshaped to {"text": ...}/
+// {"content": ...}, and Telegram has no notion of a "webhook URL" at all
+// (it's a fixed Bot API endpoint keyed by a bot token + chat ID instead).
 type NotificationChannel struct {
 	BaseModel
 	WorkspaceID string `gorm:"type:char(36);index;not null" json:"workspace_id"`
 	Name        string `gorm:"size:255;not null" json:"name"`
-	WebhookURL  string `gorm:"size:1024;not null" json:"webhook_url"`
-	Events      string `gorm:"size:255;not null" json:"events"`
+	// Provider: "generic" (default, our own JSON POSTed as-is to
+	// WebhookURL), "slack", "discord" (WebhookURL, reshaped payload), or
+	// "telegram" (TelegramBotToken + TelegramChatID, no WebhookURL).
+	Provider   string `gorm:"type:varchar(20);not null;default:'generic'" json:"provider"`
+	WebhookURL string `gorm:"size:1024" json:"webhook_url,omitempty"`
+	// TelegramBotToken is encrypted at rest (internal/cryptoutil), same as
+	// StorageTarget.Config — it's a real secret, whoever has it can send
+	// messages as that bot. TelegramChatID isn't sensitive on its own.
+	TelegramBotToken string `gorm:"type:text" json:"-"`
+	TelegramChatID   string `gorm:"size:64" json:"telegram_chat_id,omitempty"`
+	Events           string `gorm:"size:255;not null" json:"events"`
 }
 
 // AuditLog records who did what, for accountability on top of RBAC. Actor
@@ -170,9 +208,9 @@ type AuditLog struct {
 // RefreshToken lets us revoke long-lived sessions; only the hash is stored.
 type RefreshToken struct {
 	BaseModel
-	UserID    string    `gorm:"type:char(36);index;not null" json:"-"`
-	TokenHash string    `gorm:"size:255;uniqueIndex;not null" json:"-"`
-	ExpiresAt time.Time `json:"-"`
+	UserID    string     `gorm:"type:char(36);index;not null" json:"-"`
+	TokenHash string     `gorm:"size:255;uniqueIndex;not null" json:"-"`
+	ExpiresAt time.Time  `json:"-"`
 	RevokedAt *time.Time `json:"-"`
 }
 

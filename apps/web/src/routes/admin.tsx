@@ -1,17 +1,25 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { AppShell } from '#/components/AppShell'
+import { TabList, TabPanel } from '#/components/Tabs'
 import { api, ApiError, type AuditLogEntry, type Camera, type Site, type User } from '#/lib/api'
 import { useAuth } from '#/lib/auth'
 
 export const Route = createFileRoute('/admin')({ component: AdminPage })
 
 type Tab = 'users' | 'sites' | 'health' | 'audit'
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'users', label: 'Users' },
+  { id: 'sites', label: 'Sites & Kamera' },
+  { id: 'health', label: 'Health' },
+  { id: 'audit', label: 'Audit Log' },
+]
 
 function AdminPage() {
   const { user, loading } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('users')
+  const idPrefix = useId()
 
   useEffect(() => {
     if (!loading && user && !user.is_superadmin) navigate({ to: '/' })
@@ -22,24 +30,20 @@ function AdminPage() {
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
 
-        <div className="flex gap-1 border-b border-slate-200">
-          {(['users', 'sites', 'health', 'audit'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-                tab === t ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500'
-              }`}
-            >
-              {t === 'users' ? 'Users' : t === 'sites' ? 'Sites & Kamera' : t === 'health' ? 'Health' : 'Audit Log'}
-            </button>
-          ))}
-        </div>
+        <TabList idPrefix={idPrefix} label="Bagian admin" tabs={TABS} active={tab} onChange={setTab} />
 
-        {tab === 'users' && <UsersTab />}
-        {tab === 'sites' && <SitesTab />}
-        {tab === 'health' && <HealthTab />}
-        {tab === 'audit' && <AuditTab />}
+        <TabPanel id={`${idPrefix}-panel-users`} tabId={`${idPrefix}-tab-users`} active={tab === 'users'}>
+          <UsersTab />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-sites`} tabId={`${idPrefix}-tab-sites`} active={tab === 'sites'}>
+          <SitesTab />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-health`} tabId={`${idPrefix}-tab-health`} active={tab === 'health'}>
+          <HealthTab />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-audit`} tabId={`${idPrefix}-tab-audit`} active={tab === 'audit'}>
+          <AuditTab />
+        </TabPanel>
       </div>
     </AppShell>
   )
@@ -81,14 +85,14 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {users.map((u) => (
           <div key={u.id} className="p-4 flex items-center justify-between">
             <div>
               <div className="font-medium text-slate-900">
-                {u.name} <span className="text-slate-400">({u.email})</span>
+                {u.name} <span className="text-slate-500">({u.email})</span>
               </div>
               <div className="text-xs text-slate-500 font-mono">{u.id}</div>
             </div>
@@ -110,9 +114,9 @@ function UsersTab() {
 
       <form onSubmit={onCreate} className="bg-white border border-slate-200 rounded-lg p-4 max-w-md space-y-3">
         <h2 className="font-medium text-slate-900 text-sm">Buat user baru</h2>
-        <input required placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
-        <input required type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
-        <input required type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        <input required aria-label="Nama" placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        <input required type="email" aria-label="Email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        <input required type="password" aria-label="Password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={isSuperAdmin} onChange={(e) => setIsSuperAdmin(e.target.checked)} />
           Superadmin (bisa kelola semua workspace)
@@ -130,6 +134,7 @@ function SitesTab() {
   const [error, setError] = useState<string | null>(null)
   const [siteName, setSiteName] = useState('')
   const [newAgentToken, setNewAgentToken] = useState<{ site: string; token: string } | null>(null)
+  const [pairingInfo, setPairingInfo] = useState<{ site: string; code: string; expiresAt: string } | null>(null)
   const [expandedSite, setExpandedSite] = useState<string | null>(null)
 
   async function load() {
@@ -149,6 +154,7 @@ function SitesTab() {
     try {
       const res = await api.createSite(siteName)
       setNewAgentToken({ site: res.site.name, token: res.agent_token })
+      setPairingInfo(null)
       setSiteName('')
       await load()
     } catch (err) {
@@ -158,7 +164,7 @@ function SitesTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       {newAgentToken && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm space-y-1">
@@ -166,7 +172,24 @@ function SitesTab() {
             Agent token untuk "{newAgentToken.site}" (simpan sekarang, tidak ditampilkan lagi):
           </p>
           <code className="block bg-white border border-amber-200 rounded px-2 py-1 break-all">{newAgentToken.token}</code>
-          <p className="text-amber-700">Set sebagai env AGENT_TOKEN di edge agent lokasi ini.</p>
+          <p className="text-amber-700">Cara manual: set sebagai env AGENT_TOKEN di edge agent lokasi ini.</p>
+        </div>
+      )}
+
+      {pairingInfo && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm space-y-1">
+          <p className="font-medium text-emerald-800">Kode pairing untuk "{pairingInfo.site}":</p>
+          <code className="block bg-white border border-emerald-200 rounded px-2 py-1 text-lg tracking-widest text-center font-semibold">
+            {pairingInfo.code}
+          </code>
+          <p className="text-emerald-700">
+            Cara tanpa CLI: jalankan edge agent di mesin lokasi itu tanpa AGENT_TOKEN — begitu nyala, ia membuka halaman
+            setup sendiri di jaringan lokal (dicetak di log agent, mis. <code>http://&lt;ip-mesin&gt;:8091</code>). Buka
+            alamat itu di browser, masukkan kode ini.
+          </p>
+          <p className="text-emerald-700">
+            Berlaku sampai {new Date(pairingInfo.expiresAt).toLocaleTimeString('id-ID')} (15 menit, sekali pakai).
+          </p>
         </div>
       )}
 
@@ -181,13 +204,29 @@ function SitesTab() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={() => setExpandedSite(expandedSite === s.id ? null : s.id)} className="text-xs text-slate-600">
+                <button
+                  onClick={() => setExpandedSite(expandedSite === s.id ? null : s.id)}
+                  aria-expanded={expandedSite === s.id}
+                  aria-controls={`site-cameras-${s.id}`}
+                  className="text-xs text-slate-600"
+                >
                   {expandedSite === s.id ? 'Tutup' : 'Kelola kamera'}
+                </button>
+                <button
+                  onClick={async () => {
+                    const res = await api.generateSitePairingCode(s.id)
+                    setPairingInfo({ site: s.name, code: res.pairing_code, expiresAt: res.expires_at })
+                    setNewAgentToken(null)
+                  }}
+                  className="text-xs text-slate-600"
+                >
+                  Buat kode pairing
                 </button>
                 <button
                   onClick={async () => {
                     const res = await api.regenerateSiteToken(s.id)
                     setNewAgentToken({ site: s.name, token: res.agent_token })
+                    setPairingInfo(null)
                   }}
                   className="text-xs text-slate-600"
                 >
@@ -204,7 +243,7 @@ function SitesTab() {
                 </button>
               </div>
             </div>
-            {expandedSite === s.id && <SiteCameras siteId={s.id} />}
+            {expandedSite === s.id && <SiteCameras siteId={s.id} panelId={`site-cameras-${s.id}`} sites={sites} />}
           </div>
         ))}
         {sites.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada site.</p>}
@@ -215,6 +254,7 @@ function SitesTab() {
         <div className="flex gap-2">
           <input
             required
+            aria-label="Nama site (mis. Gedung A)"
             placeholder="Nama site (mis. Gedung A)"
             value={siteName}
             onChange={(e) => setSiteName(e.target.value)}
@@ -256,15 +296,31 @@ function HealthTab() {
   }, [])
 
   const sitesOnline = sites.filter((s) => isSiteOnline(s)).length
+  const offlineSites = sites.filter((s) => !isSiteOnline(s))
+  // A camera's status is only meaningful while its own site's agent is
+  // actually reporting — site_online (server-computed, see camera_handler.go)
+  // already reflects that, so trust it over the raw status for these counts.
   const camerasByStatus = {
-    online: cameras.filter((c) => c.status === 'online').length,
-    offline: cameras.filter((c) => c.status === 'offline').length,
-    unknown: cameras.filter((c) => c.status === 'unknown').length,
+    online: cameras.filter((c) => c.site_online !== false && c.status === 'online').length,
+    offline: cameras.filter((c) => c.site_online !== false && c.status === 'offline').length,
+    unknown: cameras.filter((c) => c.site_online === false || c.status === 'unknown').length,
   }
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+
+      {offlineSites.length > 0 && (
+        <div role="alert" className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm space-y-1">
+          {offlineSites.map((s) => (
+            <p key={s.id} className="text-amber-800">
+              <span className="font-medium">Site "{s.name}" sedang offline</span> — mohon periksa apakah PC/edge
+              agent di lokasi tersebut menyala dan terhubung ke internet. Status semua kamera di site ini tidak
+              bisa dipastikan sampai agent-nya kembali online.
+            </p>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Site online" value={`${sitesOnline} / ${sites.length}`} />
@@ -328,20 +384,20 @@ function AuditTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {entries.map((e) => (
           <div key={e.id} className="p-3 text-sm flex items-start justify-between gap-4">
             <div>
               <span className="font-medium text-slate-900">{e.actor_email || 'system'}</span>{' '}
               <span className="text-slate-600">{e.action}</span>{' '}
-              <span className="text-slate-400">
+              <span className="text-slate-500">
                 {e.target_type}
                 {e.target_id ? `:${e.target_id.slice(0, 8)}` : ''}
               </span>
               {e.detail && <span className="text-slate-500"> — {e.detail}</span>}
             </div>
-            <span className="text-xs text-slate-400 whitespace-nowrap">{new Date(e.created_at).toLocaleString('id-ID')}</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(e.created_at).toLocaleString('id-ID')}</span>
           </div>
         ))}
         {entries.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada aktivitas tercatat.</p>}
@@ -350,13 +406,51 @@ function AuditTab() {
   )
 }
 
-function SiteCameras({ siteId }: { siteId: string }) {
+// Common RTSP stream paths across EZVIZ models — varies by generation/codec,
+// so this is a starting point (auto-filled into the RTSP field, still
+// editable) rather than a guarantee it matches every camera.
+const EZVIZ_STREAM_PATHS = [
+  { label: 'Main stream (H.264)', path: '/h264/ch1/main/av_stream' },
+  { label: 'Main stream (path pendek, dok. EZVIZ)', path: '/ch1/main' },
+  { label: 'Sub stream (H.264, hemat bandwidth)', path: '/h264/ch1/sub/av_stream' },
+  { label: 'Main stream (H.265)', path: '/h265/ch1/main/av_stream' },
+  { label: 'Gaya Hikvision', path: '/Streaming/Channels/101' },
+] as const
+
+function SiteCameras({ siteId, panelId, sites }: { siteId: string; panelId: string; sites: Site[] }) {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [error, setError] = useState<string | null>(null)
+  const otherSites = sites.filter((s) => s.id !== siteId)
+
+  async function moveCamera(cameraId: string, targetSiteId: string) {
+    if (!targetSiteId) return
+    try {
+      await api.moveCameraToSite(cameraId, targetSiteId)
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Gagal memindahkan kamera')
+    }
+  }
   const [name, setName] = useState('')
   const [serial, setSerial] = useState('')
   const [verCode, setVerCode] = useState('')
+  const [camIp, setCamIp] = useState('')
+  const [streamPath, setStreamPath] = useState<string>(EZVIZ_STREAM_PATHS[0].path)
   const [rtspUrl, setRtspUrl] = useState('')
+  const [rtspUrlSub, setRtspUrlSub] = useState('')
+
+  function buildRtspUrl() {
+    if (!camIp || !verCode) return
+    setRtspUrl(`rtsp://admin:${verCode}@${camIp}:554${streamPath}`)
+  }
+
+  function buildRtspUrlSub() {
+    if (!camIp || !verCode) return
+    // Sub stream path is fixed regardless of the main dropdown above — it's
+    // specifically for the lower-resolution feed used by the live view
+    // "atur resolusi" toggle, not for recording.
+    setRtspUrlSub(`rtsp://admin:${verCode}@${camIp}:554/h264/ch1/sub/av_stream`)
+  }
 
   async function load() {
     try {
@@ -374,11 +468,19 @@ function SiteCameras({ siteId }: { siteId: string }) {
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await api.createCamera(siteId, { name, ezviz_serial: serial, ezviz_verification_code: verCode, local_rtsp_url: rtspUrl })
+      await api.createCamera(siteId, {
+        name,
+        ezviz_serial: serial,
+        ezviz_verification_code: verCode,
+        local_rtsp_url: rtspUrl,
+        local_rtsp_url_sub: rtspUrlSub,
+      })
       setName('')
       setSerial('')
       setVerCode('')
+      setCamIp('')
       setRtspUrl('')
+      setRtspUrlSub('')
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Gagal membuat kamera')
@@ -386,36 +488,154 @@ function SiteCameras({ siteId }: { siteId: string }) {
   }
 
   return (
-    <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100 space-y-3">
-      {error && <p className="text-sm text-red-600 pt-3">{error}</p>}
+    <div id={panelId} className="px-4 pb-4 bg-slate-50 border-t border-slate-100 space-y-3">
+      {error && (
+        <p role="alert" className="text-sm text-red-600 pt-3">
+          {error}
+        </p>
+      )}
 
       <div className="divide-y divide-slate-200">
         {cameras.map((cam) => (
           <div key={cam.id} className="py-2 flex items-center justify-between text-sm">
             <div>
-              <span className="font-medium text-slate-900">{cam.name}</span>{' '}
-              <span className="text-slate-400 font-mono text-xs">{cam.id}</span>
+              <div>
+                <span className="font-medium text-slate-900">{cam.name}</span>{' '}
+                <span className="text-slate-500 font-mono text-xs">{cam.id}</span>
+              </div>
+              <div className="text-xs">
+                {cam.local_rtsp_url ? (
+                  <span className="text-slate-500">RTSP: {cam.local_rtsp_url}</span>
+                ) : (
+                  <span className="text-amber-600">RTSP belum diisi</span>
+                )}
+                {cam.local_rtsp_url_sub && <span className="text-slate-500"> · sub-stream ada</span>}
+              </div>
             </div>
-            <button
-              onClick={async () => {
-                await api.deleteCamera(cam.id)
-                await load()
-              }}
-              className="text-xs text-red-600"
-            >
-              Hapus
-            </button>
+            <div className="flex items-center gap-3">
+              {otherSites.length > 0 && (
+                <select
+                  aria-label={`Pindahkan ${cam.name} ke site lain`}
+                  title="RTSP kamera ini harus tetap bisa dijangkau dari LAN site tujuan — pindah site tidak mengubah alamat RTSP-nya"
+                  value=""
+                  onChange={(e) => moveCamera(cam.id, e.target.value)}
+                  className="text-xs border border-slate-300 rounded px-2 py-1 text-slate-600"
+                >
+                  <option value="">Pindahkan ke site…</option>
+                  {otherSites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                onClick={async () => {
+                  await api.deleteCamera(cam.id)
+                  await load()
+                }}
+                className="text-xs text-red-600"
+              >
+                Hapus
+              </button>
+            </div>
           </div>
         ))}
         {cameras.length === 0 && <p className="py-2 text-sm text-slate-500">Belum ada kamera di site ini.</p>}
       </div>
 
-      <form onSubmit={onCreate} className="grid grid-cols-2 gap-2 pt-2">
-        <input required placeholder="Nama kamera" value={name} onChange={(e) => setName(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <input required placeholder="EZVIZ serial" value={serial} onChange={(e) => setSerial(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <input placeholder="Verification code" value={verCode} onChange={(e) => setVerCode(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <input placeholder="rtsp://... (opsional, lokal)" value={rtspUrl} onChange={(e) => setRtspUrl(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <button type="submit" className="col-span-2 bg-slate-900 text-white rounded px-4 py-1.5 text-sm font-medium">
+      <form onSubmit={onCreate} className="space-y-2 pt-2">
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            required
+            aria-label="Nama kamera"
+            placeholder="Nama kamera"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+          />
+          <input
+            aria-label="EZVIZ serial (opsional, cuma catatan)"
+            placeholder="EZVIZ serial (opsional, cuma catatan)"
+            value={serial}
+            onChange={(e) => setSerial(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+          />
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded p-2 space-y-2">
+          <p className="text-xs text-slate-500">Susun otomatis URL RTSP dari IP + verification code (LAN Preview harus sudah diaktifkan di app EZVIZ):</p>
+          <div className="grid grid-cols-3 gap-2">
+            <input
+              aria-label="Verification code"
+              placeholder="Verification code"
+              value={verCode}
+              onChange={(e) => setVerCode(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            />
+            <input
+              aria-label="IP lokal kamera"
+              placeholder="IP lokal kamera (mis. 192.168.1.50)"
+              value={camIp}
+              onChange={(e) => setCamIp(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            />
+            <select
+              aria-label="Path stream RTSP"
+              value={streamPath}
+              onChange={(e) => setStreamPath(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            >
+              {EZVIZ_STREAM_PATHS.map((p) => (
+                <option key={p.path} value={p.path}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={buildRtspUrl}
+            disabled={!camIp || !verCode}
+            className="text-xs bg-slate-200 text-slate-700 rounded px-3 py-1.5 font-medium disabled:opacity-50"
+          >
+            Susun URL RTSP →
+          </button>
+        </div>
+
+        <input
+          aria-label="URL RTSP stream utama"
+          placeholder="rtsp://... (opsional, tapi kamera tidak akan direkam kalau kosong)"
+          value={rtspUrl}
+          onChange={(e) => setRtspUrl(e.target.value)}
+          className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
+        />
+        <p className="text-xs text-slate-500">
+          Path stream beda-beda tiap model kamera — kalau URL hasil susun otomatis tidak konek, tes dulu manual pakai VLC/ffprobe, coba pilihan path lain di atas.
+        </p>
+
+        <div className="bg-white border border-slate-200 rounded p-2 space-y-2">
+          <p className="text-xs text-slate-500">
+            Sub-stream (opsional) — resolusi rendah khusus live view, dipilih lewat tombol "Atur resolusi" di grid. Rekaman tetap pakai stream utama di atas.
+          </p>
+          <button
+            type="button"
+            onClick={buildRtspUrlSub}
+            disabled={!camIp || !verCode}
+            className="text-xs bg-slate-200 text-slate-700 rounded px-3 py-1.5 font-medium disabled:opacity-50"
+          >
+            Susun URL Sub-stream →
+          </button>
+          <input
+            aria-label="URL RTSP sub-stream"
+            placeholder="rtsp://... sub-stream (opsional)"
+            value={rtspUrlSub}
+            onChange={(e) => setRtspUrlSub(e.target.value)}
+            className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
+          />
+        </div>
+
+        <button type="submit" className="w-full bg-slate-900 text-white rounded px-4 py-1.5 text-sm font-medium">
           Tambah kamera
         </button>
       </form>

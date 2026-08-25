@@ -51,7 +51,11 @@ function WorkspaceList() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold text-slate-900">Workspace</h1>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {workspaces?.map((ws) => (
@@ -73,13 +77,19 @@ function WorkspaceList() {
       {user?.is_superadmin && (
         <form onSubmit={onCreate} className="bg-white border border-slate-200 rounded-lg p-4 max-w-sm space-y-3">
           <h2 className="font-medium text-slate-900">Buat workspace baru</h2>
-          <input
-            required
-            placeholder="Nama workspace"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
-          />
+          <div className="space-y-1">
+            <label htmlFor="new-workspace-name" className="sr-only">
+              Nama workspace
+            </label>
+            <input
+              id="new-workspace-name"
+              required
+              placeholder="Nama workspace"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+            />
+          </div>
           <button
             type="submit"
             disabled={creating}

@@ -28,14 +28,15 @@ func New(baseURL, token string) *Client {
 }
 
 type Camera struct {
-	ID                        string         `json:"id"`
-	Name                      string         `json:"name"`
-	EzvizSerial               string         `json:"ezviz_serial"`
-	LocalRTSPURL              string         `json:"local_rtsp_url"`
-	ChannelNo                 int            `json:"channel_no"`
-	Status                    string         `json:"status"`
-	RecordingStorageTargetID  *string        `json:"recording_storage_target_id"`
-	StorageTarget             *StorageTarget `json:"storage_target"`
+	ID                       string         `json:"id"`
+	Name                     string         `json:"name"`
+	EzvizSerial              string         `json:"ezviz_serial"`
+	LocalRTSPURL             string         `json:"local_rtsp_url"`
+	LocalRTSPURLSub          string         `json:"local_rtsp_url_sub"`
+	ChannelNo                int            `json:"channel_no"`
+	Status                   string         `json:"status"`
+	RecordingStorageTargetID *string        `json:"recording_storage_target_id"`
+	StorageTarget            *StorageTarget `json:"storage_target"`
 }
 
 type StorageTarget struct {
@@ -45,8 +46,9 @@ type StorageTarget struct {
 }
 
 type HeartbeatResponse struct {
-	SiteID  string   `json:"site_id"`
-	Cameras []Camera `json:"cameras"`
+	SiteID   string   `json:"site_id"`
+	SiteName string   `json:"site_name"`
+	Cameras  []Camera `json:"cameras"`
 }
 
 func (c *Client) Heartbeat(ctx context.Context) (*HeartbeatResponse, error) {

@@ -3,6 +3,8 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
+	"time"
 
 	"nvr-ezviz/api/internal/models"
 
@@ -51,6 +53,53 @@ func (h *Handler) DeleteSite(c *fiber.Ctx) error {
 	}
 	h.audit(c, "site.delete", "site", id, nil, "")
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// pairingCodeTTL is short on purpose: the code is typed by hand into an
+// unauthenticated local setup page, so a shorter window limits how long a
+// leaked/overheard code stays usable.
+const pairingCodeTTL = 15 * time.Minute
+
+// GenerateSitePairingCode issues a short-lived code that a freshly-installed
+// edge agent (no AGENT_TOKEN yet) can exchange for the site's real agent
+// token via its own local setup page + POST /api/agent/pair — the whole
+// point being nobody has to copy the real token into a .env file by hand.
+func (h *Handler) GenerateSitePairingCode(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var site models.Site
+	if err := h.DB.First(&site, "id = ?", id).Error; err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "site not found")
+	}
+
+	code, err := randomPairingCode()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to generate pairing code")
+	}
+	expiresAt := time.Now().Add(pairingCodeTTL)
+	if err := h.DB.Model(&site).Updates(map[string]interface{}{
+		"pairing_code":            code,
+		"pairing_code_expires_at": &expiresAt,
+	}).Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	h.audit(c, "site.pairing_code_generated", "site", site.ID, nil, "")
+	return c.JSON(fiber.Map{"pairing_code": code, "expires_at": expiresAt})
+}
+
+// randomPairingCode avoids characters that are easy to mistype or confuse
+// when read off a screen and typed on another device (0/O, 1/I/L).
+func randomPairingCode() (string, error) {
+	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	for _, b := range buf {
+		sb.WriteByte(alphabet[int(b)%len(alphabet)])
+	}
+	return sb.String(), nil
 }
 
 func (h *Handler) RegenerateSiteToken(c *fiber.Ctx) error {

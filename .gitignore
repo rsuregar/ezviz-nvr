@@ -12,6 +12,7 @@ apps/api/api
 apps/api/seed
 apps/edge-agent/agent
 recordings/
+agent_token.json
 
 # MediaMTX (native/no-Docker run auto-generates a self-signed cert here)
 auto.crt

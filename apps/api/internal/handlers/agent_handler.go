@@ -32,6 +32,13 @@ func (h *Handler) AgentHeartbeat(c *fiber.Ctx) error {
 	now := time.Now()
 	h.DB.Model(&models.Site{}).Where("id = ?", siteID).Update("last_seen_at", &now)
 
+	// The agent needs its own site's name to burn a "camera - site" label
+	// into recordings — it only ever learns this from us, whether it got
+	// its token via pairing or a manually-set AGENT_TOKEN, so it has to
+	// come from every heartbeat rather than a one-time pairing response.
+	var site models.Site
+	h.DB.Select("name").First(&site, "id = ?", siteID)
+
 	var cameras []models.Camera
 	if err := h.DB.Where("site_id = ?", siteID).Find(&cameras).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
@@ -57,8 +64,46 @@ func (h *Handler) AgentHeartbeat(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"site_id": siteID,
-		"cameras": result,
+		"site_id":   siteID,
+		"site_name": site.Name,
+		"cameras":   result,
+	})
+}
+
+type agentPairRequest struct {
+	PairingCode string `json:"pairing_code"`
+}
+
+// AgentPair is deliberately NOT behind RequireAgentToken — a freshly
+// installed edge agent has no token yet, that's the entire problem this
+// solves. It's the other end of GenerateSitePairingCode: a short-lived,
+// single-use code (typed by hand into the edge agent's own local setup
+// page) exchanges here for the site's real, long-lived AgentToken, so
+// nobody has to copy that token into a .env file manually.
+func (h *Handler) AgentPair(c *fiber.Ctx) error {
+	var req agentPairRequest
+	if err := c.BodyParser(&req); err != nil || req.PairingCode == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "pairing_code required")
+	}
+
+	var site models.Site
+	if err := h.DB.Where("pairing_code = ? AND pairing_code_expires_at > ?", req.PairingCode, time.Now()).
+		First(&site).Error; err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "kode pairing tidak valid atau sudah kedaluwarsa")
+	}
+
+	if err := h.DB.Model(&site).Updates(map[string]interface{}{
+		"pairing_code":            nil,
+		"pairing_code_expires_at": nil,
+	}).Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	h.audit(c, "site.paired", "site", site.ID, nil, "")
+	return c.JSON(fiber.Map{
+		"site_id":     site.ID,
+		"site_name":   site.Name,
+		"agent_token": site.AgentToken,
 	})
 }
 
