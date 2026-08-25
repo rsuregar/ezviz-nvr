@@ -50,15 +50,21 @@ func (d *gdriveDeleter) Delete(ctx context.Context, remoteID string) error {
 // URL (a file would have to be made "anyone with the link" to get a
 // directly-fetchable URL, which isn't acceptable for private recordings),
 // so playback is relayed through our own server instead using the stored
-// OAuth credentials.
-func (d *gdriveDeleter) Stream(ctx context.Context, remoteID string) (io.ReadCloser, string, int64, error) {
-	resp, err := d.service.Files.Get(remoteID).Context(ctx).Download()
+// OAuth credentials. Drive's media download endpoint honors a Range header
+// like any other HTTP file server, so browser seeking is forwarded straight
+// through rather than us having to fetch and slice the whole object.
+func (d *gdriveDeleter) Stream(ctx context.Context, remoteID string, rangeHeader string) (io.ReadCloser, string, int64, string, int, error) {
+	call := d.service.Files.Get(remoteID).Context(ctx)
+	if rangeHeader != "" {
+		call.Header().Set("Range", rangeHeader)
+	}
+	resp, err := call.Download()
 	if err != nil {
-		return nil, "", 0, err
+		return nil, "", 0, "", 0, err
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "video/mp4"
 	}
-	return resp.Body, contentType, resp.ContentLength, nil
+	return resp.Body, contentType, resp.ContentLength, resp.Header.Get("Content-Range"), resp.StatusCode, nil
 }

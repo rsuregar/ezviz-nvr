@@ -87,11 +87,21 @@ func (h *Handler) StreamRecording(c *fiber.Ctx) error {
 		//   2. No `defer reader.Close()` — that would close Drive's
 		//      response body before fasthttp ever got to read it. fasthttp
 		//      closes io.Closer streams itself once it finishes reading.
-		reader, contentType, size, err := streamer.Stream(context.Background(), rec.ObjectKey)
+		//
+		// The incoming Range header (if any) is forwarded straight to
+		// Drive so <video> scrubbing works — without it, a browser seeking
+		// into an unbuffered part of a large recording has no way to jump
+		// there without redownloading from byte 0.
+		reader, contentType, size, contentRange, status, err := streamer.Stream(context.Background(), rec.ObjectKey, c.Get("Range"))
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "failed to fetch recording: "+err.Error())
 		}
 		c.Set("Content-Type", contentType)
+		c.Set("Accept-Ranges", "bytes")
+		if status == fiber.StatusPartialContent {
+			c.Status(fiber.StatusPartialContent)
+			c.Set("Content-Range", contentRange)
+		}
 		if size > 0 {
 			return c.SendStream(reader, int(size))
 		}

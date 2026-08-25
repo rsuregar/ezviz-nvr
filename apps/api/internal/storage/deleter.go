@@ -25,12 +25,19 @@ type Getter interface {
 
 // Streamer is the fallback for backends that can't produce a presigned URL
 // (Google Drive): the caller reads the object through us and relays it to
-// the browser, spending our own server's bandwidth to do so. size is the
-// object's total byte count (-1 if unknown) — the handler needs it to set
-// a real Content-Length rather than falling back to chunked transfer,
-// which is what silently broke browser/curl playback before this existed.
+// the browser, spending our own server's bandwidth to do so.
+//
+// rangeHeader is forwarded verbatim from the browser's incoming Range
+// request (empty means "whole file") so <video> seeking works without
+// downloading the whole recording first. size is the byte count of what's
+// actually being returned (the requested range, or the whole object for a
+// non-range request) — the handler needs it to set a real Content-Length
+// rather than falling back to chunked transfer, which is what silently
+// broke browser/curl playback before this existed. contentRange is the
+// backend's Content-Range response header (set only when statusCode is
+// 206); statusCode is 200 or 206.
 type Streamer interface {
-	Stream(ctx context.Context, remoteID string) (reader io.ReadCloser, contentType string, size int64, err error)
+	Stream(ctx context.Context, remoteID string, rangeHeader string) (reader io.ReadCloser, contentType string, size int64, contentRange string, statusCode int, err error)
 }
 
 func New(storageType string, config map[string]interface{}) (Deleter, error) {
