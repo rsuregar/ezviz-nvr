@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '#/components/AppShell'
 import { api, ApiError, recordingStreamUrl, type Camera, type Recording } from '#/lib/api'
@@ -62,17 +62,26 @@ function RecordingsPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold text-slate-900">Rekaman</h1>
-          <select
-            value={selectedCameraId}
-            onChange={(e) => setSelectedCameraId(e.target.value)}
-            className="border border-slate-300 rounded px-3 py-2 text-sm"
-          >
-            {cameras.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedCameraId}
+              onChange={(e) => setSelectedCameraId(e.target.value)}
+              className="border border-slate-300 rounded px-3 py-2 text-sm"
+            >
+              {cameras.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <Link
+              to="/workspaces/$workspaceId/live"
+              params={{ workspaceId }}
+              className="bg-slate-900 text-white rounded px-4 py-2 text-sm font-medium whitespace-nowrap"
+            >
+              Kembali ke Live View
+            </Link>
+          </div>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
