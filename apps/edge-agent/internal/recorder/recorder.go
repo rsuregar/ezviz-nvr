@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -258,12 +259,15 @@ func (r *Recorder) uploadFinishedSegments(ctx context.Context, cam apiclient.Cam
 		}
 	}
 	sort.Strings(names)
-	// The strftime-named files sort chronologically; the last one is still
-	// being written by ffmpeg, so only upload everything before it.
+	// The strftime-named files (%Y%m%d-%H%M%S.mp4) sort chronologically; the
+	// last one is still being written by ffmpeg, so only upload everything
+	// before it. Since the segment muxer starts file N+1 the instant it
+	// closes file N, file N+1's name doubles as file N's precise end time —
+	// far more accurate than the upload-time "now" this used to report.
 	finished := names[:len(names)-1]
 
 	var lastErr error
-	for _, name := range finished {
+	for i, name := range finished {
 		localPath := filepath.Join(dir, name)
 
 		remoteID, size, err := up.Upload(ctx, localPath, cam.Name, name)
@@ -273,7 +277,12 @@ func (r *Recorder) uploadFinishedSegments(ctx context.Context, cam apiclient.Cam
 			continue
 		}
 
-		now := time.Now().UTC().Format(time.RFC3339)
+		startedAt := segmentTimestamp(name)
+		endedAt := segmentTimestamp(names[i+1])
+		if startedAt.IsZero() || endedAt.IsZero() {
+			startedAt = time.Now().UTC()
+			endedAt = startedAt
+		}
 		storageTargetID := ""
 		if cam.StorageTarget != nil {
 			storageTargetID = cam.StorageTarget.ID
@@ -282,8 +291,8 @@ func (r *Recorder) uploadFinishedSegments(ctx context.Context, cam apiclient.Cam
 			CameraID:        cam.ID,
 			StorageTargetID: storageTargetID,
 			ObjectKey:       remoteID,
-			StartedAt:       now,
-			EndedAt:         now,
+			StartedAt:       startedAt.Format(time.RFC3339),
+			EndedAt:         endedAt.Format(time.RFC3339),
 			SizeBytes:       size,
 		}); err != nil {
 			log.Printf("camera %s: failed to report recording %s: %v", cam.Name, name, err)
@@ -296,4 +305,18 @@ func (r *Recorder) uploadFinishedSegments(ctx context.Context, cam apiclient.Cam
 		}
 	}
 	return lastErr
+}
+
+// segmentTimestamp parses a segment filename written by ffmpeg's
+// "-strftime 1" option with the "%Y%m%d-%H%M%S.mp4" pattern used in
+// ffmpegLoop, returned in UTC. ffmpeg's strftime formats in the local
+// system time, not UTC, so that's what we parse it as here. Returns the
+// zero Time if name doesn't match the expected pattern.
+func segmentTimestamp(name string) time.Time {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	t, err := time.ParseInLocation("20060102-150405", base, time.Local)
+	if err != nil {
+		return time.Time{}
+	}
+	return t.UTC()
 }
