@@ -80,21 +80,26 @@ type UserWorkspace struct {
 // a site's cameras get assigned into whichever workspaces need to see them.
 type Site struct {
 	BaseModel
-	Name       string `gorm:"size:255;not null" json:"name"`
-	AgentToken string `gorm:"size:255;uniqueIndex;not null" json:"-"`
+	Name       string     `gorm:"size:255;not null" json:"name"`
+	AgentToken string     `gorm:"size:255;uniqueIndex;not null" json:"-"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 }
 
 // Camera represents one EZVIZ device physically installed at a Site.
 type Camera struct {
 	BaseModel
-	SiteID       string       `gorm:"type:char(36);index;not null" json:"site_id"`
-	Name         string       `gorm:"size:255;not null" json:"name"`
-	EzvizSerial  string       `gorm:"size:64;not null" json:"ezviz_serial"`
-	EzvizVerCode string       `gorm:"size:64" json:"-"`
-	LocalRTSPURL string       `gorm:"size:512" json:"local_rtsp_url,omitempty"`
-	ChannelNo    int          `gorm:"default:1" json:"channel_no"`
-	Status       CameraStatus `gorm:"type:varchar(20);default:'unknown'" json:"status"`
+	SiteID       string `gorm:"type:char(36);index;not null" json:"site_id"`
+	Name         string `gorm:"size:255;not null" json:"name"`
+	EzvizSerial  string `gorm:"size:64;not null" json:"ezviz_serial"`
+	EzvizVerCode string `gorm:"size:64" json:"-"`
+	LocalRTSPURL string `gorm:"size:512" json:"local_rtsp_url,omitempty"`
+	// LocalRTSPURLSub is the camera's secondary/sub stream (lower
+	// resolution, less bandwidth) — optional. When set, the edge agent
+	// pushes it to MediaMTX as an extra live-view-only quality option
+	// alongside the main stream; it's never recorded to storage.
+	LocalRTSPURLSub string       `gorm:"size:512" json:"local_rtsp_url_sub,omitempty"`
+	ChannelNo       int          `gorm:"default:1" json:"channel_no"`
+	Status          CameraStatus `gorm:"type:varchar(20);default:'unknown'" json:"status"`
 	// RecordingStorageTargetID picks which single StorageTarget this camera's
 	// segments upload to. A camera can be visible in several workspaces, but
 	// it is only physically recorded once, so storage is bound per-camera
@@ -132,13 +137,13 @@ type StorageTarget struct {
 // back without listing the object storage bucket directly.
 type Recording struct {
 	BaseModel
-	CameraID      string     `gorm:"type:char(36);index;not null" json:"camera_id"`
-	StorageTargetID string   `gorm:"type:char(36);index;not null" json:"storage_target_id"`
-	ObjectKey     string     `gorm:"size:1024;not null" json:"object_key"`
-	StartedAt     time.Time  `json:"started_at"`
-	EndedAt       *time.Time `json:"ended_at"`
-	SizeBytes     int64      `json:"size_bytes"`
-	Status        string     `gorm:"type:varchar(20);default:'uploaded'" json:"status"`
+	CameraID        string     `gorm:"type:char(36);index;not null" json:"camera_id"`
+	StorageTargetID string     `gorm:"type:char(36);index;not null" json:"storage_target_id"`
+	ObjectKey       string     `gorm:"size:1024;not null" json:"object_key"`
+	StartedAt       time.Time  `json:"started_at"`
+	EndedAt         *time.Time `json:"ended_at"`
+	SizeBytes       int64      `json:"size_bytes"`
+	Status          string     `gorm:"type:varchar(20);default:'uploaded'" json:"status"`
 }
 
 // NotificationChannel is a workspace-scoped webhook destination for
@@ -170,9 +175,9 @@ type AuditLog struct {
 // RefreshToken lets us revoke long-lived sessions; only the hash is stored.
 type RefreshToken struct {
 	BaseModel
-	UserID    string    `gorm:"type:char(36);index;not null" json:"-"`
-	TokenHash string    `gorm:"size:255;uniqueIndex;not null" json:"-"`
-	ExpiresAt time.Time `json:"-"`
+	UserID    string     `gorm:"type:char(36);index;not null" json:"-"`
+	TokenHash string     `gorm:"size:255;uniqueIndex;not null" json:"-"`
+	ExpiresAt time.Time  `json:"-"`
 	RevokedAt *time.Time `json:"-"`
 }
 

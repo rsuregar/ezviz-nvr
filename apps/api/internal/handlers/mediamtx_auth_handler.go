@@ -37,6 +37,9 @@ func (h *Handler) MediaMTXAuth(c *fiber.Ctx) error {
 	if cameraID == "" || cameraID == req.Path {
 		return fiber.NewError(fiber.StatusForbidden, "unknown path")
 	}
+	// The sub-stream (lower resolution, live-view only, never recorded)
+	// publishes to "live/<cameraID>_sub" — same camera, same permissions.
+	cameraID = strings.TrimSuffix(cameraID, "_sub")
 
 	switch req.Action {
 	case "publish":

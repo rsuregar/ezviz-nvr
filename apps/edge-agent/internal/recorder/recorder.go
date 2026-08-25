@@ -97,7 +97,48 @@ func (r *Recorder) runCamera(ctx context.Context, cam apiclient.Camera) {
 	}
 
 	go r.uploadLoop(ctx, cam, dir)
+	if cam.LocalRTSPURLSub != "" {
+		go r.subStreamLoop(ctx, cam)
+	}
 	r.ffmpegLoop(ctx, cam, dir)
+}
+
+// subStreamLoop pushes the camera's secondary (lower-resolution) stream to
+// MediaMTX for live view only — no local segments, no upload, no recording,
+// since storage should only ever hold one copy of a camera's footage.
+func (r *Recorder) subStreamLoop(ctx context.Context, cam apiclient.Camera) {
+	pushURL := r.cfg.LivePushURLSub(cam.ID)
+	if pushURL == "" {
+		return // MediaMTX live push isn't configured on this agent at all
+	}
+
+	backoff := 5 * time.Second
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		cmd := exec.CommandContext(ctx, "ffmpeg",
+			"-rtsp_transport", "tcp",
+			"-i", cam.LocalRTSPURLSub,
+			"-c", "copy",
+			"-f", "rtsp",
+			"-rtsp_transport", "tcp",
+			pushURL,
+		)
+		log.Printf("camera %s: starting sub-stream ffmpeg", cam.Name)
+		err := cmd.Run()
+		if ctx.Err() != nil {
+			return
+		}
+		log.Printf("camera %s: sub-stream ffmpeg exited (%v), retrying in %s", cam.Name, err, backoff)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+	}
 }
 
 // ffmpegLoop keeps ffmpeg running against the camera's RTSP feed, segmenting
@@ -119,6 +160,13 @@ func (r *Recorder) ffmpegLoop(ctx context.Context, cam apiclient.Camera, dir str
 			"-segment_time", strconv.Itoa(r.cfg.SegmentSeconds),
 			"-reset_timestamps", "1",
 			"-strftime", "1",
+			// Without faststart the moov atom (seek index) lands at the
+			// end of each segment, which browsers can't play from a
+			// plain sequential GET — confirmed against a real recording
+			// where moov sat at 99.7% through the file. The segment
+			// muxer seeks back into the already-written local file to
+			// relocate it, which only works for real files, not pipes.
+			"-movflags", "+faststart",
 			filepath.Join(dir, "%Y%m%d-%H%M%S.mp4"),
 		}
 		// Second output on the same decoded input: push a live copy to the
@@ -217,9 +265,8 @@ func (r *Recorder) uploadFinishedSegments(ctx context.Context, cam apiclient.Cam
 	var lastErr error
 	for _, name := range finished {
 		localPath := filepath.Join(dir, name)
-		objectKey := cam.ID + "/" + name
 
-		remoteID, size, err := up.Upload(ctx, localPath, objectKey)
+		remoteID, size, err := up.Upload(ctx, localPath, cam.Name, name)
 		if err != nil {
 			log.Printf("camera %s: upload failed for %s: %v", cam.Name, name, err)
 			lastErr = err

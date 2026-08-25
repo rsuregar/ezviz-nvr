@@ -64,11 +64,12 @@ func (h *Handler) ListAllCameras(c *fiber.Ctx) error {
 }
 
 type createCameraRequest struct {
-	Name         string `json:"name"`
-	EzvizSerial  string `json:"ezviz_serial"`
-	EzvizVerCode string `json:"ezviz_verification_code"`
-	LocalRTSPURL string `json:"local_rtsp_url"`
-	ChannelNo    int    `json:"channel_no"`
+	Name            string `json:"name"`
+	EzvizSerial     string `json:"ezviz_serial"`
+	EzvizVerCode    string `json:"ezviz_verification_code"`
+	LocalRTSPURL    string `json:"local_rtsp_url"`
+	LocalRTSPURLSub string `json:"local_rtsp_url_sub"`
+	ChannelNo       int    `json:"channel_no"`
 }
 
 func (h *Handler) CreateCamera(c *fiber.Ctx) error {
@@ -84,13 +85,14 @@ func (h *Handler) CreateCamera(c *fiber.Ctx) error {
 		req.ChannelNo = 1
 	}
 	camera := models.Camera{
-		SiteID:       siteID,
-		Name:         req.Name,
-		EzvizSerial:  req.EzvizSerial,
-		EzvizVerCode: req.EzvizVerCode,
-		LocalRTSPURL: req.LocalRTSPURL,
-		ChannelNo:    req.ChannelNo,
-		Status:       models.CameraUnknown,
+		SiteID:          siteID,
+		Name:            req.Name,
+		EzvizSerial:     req.EzvizSerial,
+		EzvizVerCode:    req.EzvizVerCode,
+		LocalRTSPURL:    req.LocalRTSPURL,
+		LocalRTSPURLSub: req.LocalRTSPURLSub,
+		ChannelNo:       req.ChannelNo,
+		Status:          models.CameraUnknown,
 	}
 	if err := h.DB.Create(&camera).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
@@ -111,6 +113,9 @@ func (h *Handler) UpdateCamera(c *fiber.Ctx) error {
 	}
 	if req.LocalRTSPURL != "" {
 		updates["local_rtsp_url"] = req.LocalRTSPURL
+	}
+	if req.LocalRTSPURLSub != "" {
+		updates["local_rtsp_url_sub"] = req.LocalRTSPURLSub
 	}
 	if req.ChannelNo != 0 {
 		updates["channel_no"] = req.ChannelNo

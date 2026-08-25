@@ -25,9 +25,12 @@ type Getter interface {
 
 // Streamer is the fallback for backends that can't produce a presigned URL
 // (Google Drive): the caller reads the object through us and relays it to
-// the browser, spending our own server's bandwidth to do so.
+// the browser, spending our own server's bandwidth to do so. size is the
+// object's total byte count (-1 if unknown) — the handler needs it to set
+// a real Content-Length rather than falling back to chunked transfer,
+// which is what silently broke browser/curl playback before this existed.
 type Streamer interface {
-	Stream(ctx context.Context, remoteID string) (io.ReadCloser, string, error)
+	Stream(ctx context.Context, remoteID string) (reader io.ReadCloser, contentType string, size int64, err error)
 }
 
 func New(storageType string, config map[string]interface{}) (Deleter, error) {

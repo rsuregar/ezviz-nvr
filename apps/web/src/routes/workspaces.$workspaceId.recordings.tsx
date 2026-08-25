@@ -23,14 +23,29 @@ function RecordingsPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Gagal memuat kamera'))
   }, [workspaceId])
 
-  useEffect(() => {
+  function loadRecordings() {
     if (!selectedCameraId) return
-    setSelected(null)
     api
       .listCameraRecordings(workspaceId, selectedCameraId)
       .then(setRecordings)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Gagal memuat rekaman'))
+  }
+
+  useEffect(() => {
+    setSelected(null)
+    loadRecordings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, selectedCameraId])
+
+  async function deleteRecording(rec: Recording) {
+    try {
+      await api.deleteRecording(workspaceId, selectedCameraId, rec.id)
+      if (selected?.id === rec.id) setSelected(null)
+      loadRecordings()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Gagal menghapus rekaman')
+    }
+  }
 
   const groups = useMemo(() => {
     const byDate = new Map<string, Recording[]>()
@@ -89,19 +104,25 @@ function RecordingsPage() {
               <h2 className="text-sm font-medium text-slate-500 mb-2">{date}</h2>
               <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
                 {recs.map((rec) => (
-                  <button
+                  <div
                     key={rec.id}
-                    onClick={() => setSelected(rec)}
-                    className={`w-full text-left px-4 py-3 flex items-center justify-between text-sm hover:bg-slate-50 ${
-                      selected?.id === rec.id ? 'bg-slate-50' : ''
-                    }`}
+                    className={`flex items-center justify-between text-sm hover:bg-slate-50 ${selected?.id === rec.id ? 'bg-slate-50' : ''}`}
                   >
-                    <span className="text-slate-900">
-                      {new Date(rec.started_at).toLocaleTimeString('id-ID')}
-                      {rec.ended_at && ` – ${new Date(rec.ended_at).toLocaleTimeString('id-ID')}`}
-                    </span>
-                    <span className="text-slate-400">{formatSize(rec.size_bytes)}</span>
-                  </button>
+                    <button onClick={() => setSelected(rec)} className="flex-1 text-left px-4 py-3">
+                      <span className="text-slate-900">
+                        {new Date(rec.started_at).toLocaleTimeString('id-ID')}
+                        {rec.ended_at && ` – ${new Date(rec.ended_at).toLocaleTimeString('id-ID')}`}
+                      </span>
+                      <span className="text-slate-400 ml-2">{formatSize(rec.size_bytes)}</span>
+                    </button>
+                    <button
+                      onClick={() => deleteRecording(rec)}
+                      className="text-xs text-red-600 px-4"
+                      title="Hapus rekaman"
+                    >
+                      Hapus
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

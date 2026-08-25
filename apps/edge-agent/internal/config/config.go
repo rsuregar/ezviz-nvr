@@ -55,6 +55,16 @@ func (c Config) LivePushURL(cameraID string) string {
 	return "rtsp://agent:" + c.AgentToken + "@" + c.MediaMTXHost + "/live/" + cameraID
 }
 
+// LivePushURLSub is the equivalent push target for a camera's secondary
+// (lower-resolution) stream — live view only, MediaMTX auth strips the
+// "_sub" suffix and treats it as the same camera (see MediaMTXAuth).
+func (c Config) LivePushURLSub(cameraID string) string {
+	if c.MediaMTXHost == "" {
+		return ""
+	}
+	return "rtsp://agent:" + c.AgentToken + "@" + c.MediaMTXHost + "/live/" + cameraID + "_sub"
+}
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

@@ -78,6 +78,7 @@ func New(h *handlers.Handler, db *gorm.DB) *fiber.App {
 	wsAdmin.Put("/", h.UpdateWorkspace)
 	wsAdmin.Put("/members/:userId", h.SetWorkspaceMembership)
 	wsAdmin.Delete("/members/:userId", h.RemoveWorkspaceMembership)
+	wsAdmin.Delete("/cameras/:cameraId/recordings/:recordingId", h.DeleteRecording)
 	wsAdmin.Post("/cameras/:id/assign", h.AssignCameraToWorkspace)
 	wsAdmin.Delete("/cameras/:id/assign", h.UnassignCameraFromWorkspace)
 	wsAdmin.Put("/cameras/:id/storage-target", h.SetCameraStorageTarget)

@@ -51,14 +51,14 @@ func (d *gdriveDeleter) Delete(ctx context.Context, remoteID string) error {
 // directly-fetchable URL, which isn't acceptable for private recordings),
 // so playback is relayed through our own server instead using the stored
 // OAuth credentials.
-func (d *gdriveDeleter) Stream(ctx context.Context, remoteID string) (io.ReadCloser, string, error) {
+func (d *gdriveDeleter) Stream(ctx context.Context, remoteID string) (io.ReadCloser, string, int64, error) {
 	resp, err := d.service.Files.Get(remoteID).Context(ctx).Download()
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "video/mp4"
 	}
-	return resp.Body, contentType, nil
+	return resp.Body, contentType, resp.ContentLength, nil
 }

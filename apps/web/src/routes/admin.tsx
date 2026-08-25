@@ -370,10 +370,19 @@ function SiteCameras({ siteId }: { siteId: string }) {
   const [camIp, setCamIp] = useState('')
   const [streamPath, setStreamPath] = useState<string>(EZVIZ_STREAM_PATHS[0].path)
   const [rtspUrl, setRtspUrl] = useState('')
+  const [rtspUrlSub, setRtspUrlSub] = useState('')
 
   function buildRtspUrl() {
     if (!camIp || !verCode) return
     setRtspUrl(`rtsp://admin:${verCode}@${camIp}:554${streamPath}`)
+  }
+
+  function buildRtspUrlSub() {
+    if (!camIp || !verCode) return
+    // Sub stream path is fixed regardless of the main dropdown above — it's
+    // specifically for the lower-resolution feed used by the live view
+    // "atur resolusi" toggle, not for recording.
+    setRtspUrlSub(`rtsp://admin:${verCode}@${camIp}:554/h264/ch1/sub/av_stream`)
   }
 
   async function load() {
@@ -392,12 +401,19 @@ function SiteCameras({ siteId }: { siteId: string }) {
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await api.createCamera(siteId, { name, ezviz_serial: serial, ezviz_verification_code: verCode, local_rtsp_url: rtspUrl })
+      await api.createCamera(siteId, {
+        name,
+        ezviz_serial: serial,
+        ezviz_verification_code: verCode,
+        local_rtsp_url: rtspUrl,
+        local_rtsp_url_sub: rtspUrlSub,
+      })
       setName('')
       setSerial('')
       setVerCode('')
       setCamIp('')
       setRtspUrl('')
+      setRtspUrlSub('')
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Gagal membuat kamera')
@@ -422,6 +438,7 @@ function SiteCameras({ siteId }: { siteId: string }) {
                 ) : (
                   <span className="text-amber-600">RTSP belum diisi</span>
                 )}
+                {cam.local_rtsp_url_sub && <span className="text-slate-400"> · sub-stream ada</span>}
               </div>
             </div>
             <button
@@ -476,6 +493,26 @@ function SiteCameras({ siteId }: { siteId: string }) {
         <p className="text-xs text-slate-400">
           Path stream beda-beda tiap model kamera — kalau URL hasil susun otomatis tidak konek, tes dulu manual pakai VLC/ffprobe, coba pilihan path lain di atas.
         </p>
+
+        <div className="bg-white border border-slate-200 rounded p-2 space-y-2">
+          <p className="text-xs text-slate-500">
+            Sub-stream (opsional) — resolusi rendah khusus live view, dipilih lewat tombol "Atur resolusi" di grid. Rekaman tetap pakai stream utama di atas.
+          </p>
+          <button
+            type="button"
+            onClick={buildRtspUrlSub}
+            disabled={!camIp || !verCode}
+            className="text-xs bg-slate-200 text-slate-700 rounded px-3 py-1.5 font-medium disabled:opacity-50"
+          >
+            Susun URL Sub-stream →
+          </button>
+          <input
+            placeholder="rtsp://... sub-stream (opsional)"
+            value={rtspUrlSub}
+            onChange={(e) => setRtspUrlSub(e.target.value)}
+            className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
+          />
+        </div>
 
         <button type="submit" className="w-full bg-slate-900 text-white rounded px-4 py-1.5 text-sm font-medium">
           Tambah kamera

@@ -3,6 +3,7 @@ package uploader
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -37,7 +38,11 @@ func NewS3Uploader(config map[string]interface{}) (*S3Uploader, error) {
 	return &S3Uploader{client: client, bucket: bucket}, nil
 }
 
-func (u *S3Uploader) Upload(ctx context.Context, localPath, objectKey string) (string, int64, error) {
+// Upload keys objects as recordings/<camera>/<YYYY-MM-DD>/<fileName> — S3
+// prefixes are free (no real "folders", no extra API calls), so this
+// mirrors the Drive layout exactly for consistency between backends.
+func (u *S3Uploader) Upload(ctx context.Context, localPath, cameraName, fileName string) (string, int64, error) {
+	objectKey := "recordings/" + sanitizeFolderName(cameraName) + "/" + time.Now().UTC().Format("2006-01-02") + "/" + fileName
 	info, err := u.client.FPutObject(ctx, u.bucket, objectKey, localPath, minio.PutObjectOptions{
 		ContentType: "video/mp4",
 	})

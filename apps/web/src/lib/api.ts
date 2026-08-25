@@ -39,6 +39,7 @@ export interface Camera {
   name: string
   ezviz_serial: string
   local_rtsp_url: string
+  local_rtsp_url_sub?: string
   channel_no: number
   status: 'online' | 'offline' | 'unknown'
   recording_storage_target_id: string | null
@@ -220,7 +221,14 @@ export const api = {
   listAllCameras: () => request<(Camera & { site_name: string })[]>('/api/cameras'),
   createCamera: (
     siteId: string,
-    body: { name: string; ezviz_serial: string; ezviz_verification_code?: string; local_rtsp_url?: string; channel_no?: number },
+    body: {
+      name: string
+      ezviz_serial: string
+      ezviz_verification_code?: string
+      local_rtsp_url?: string
+      local_rtsp_url_sub?: string
+      channel_no?: number
+    },
   ) => request<Camera>(`/api/sites/${siteId}/cameras`, { method: 'POST', body: JSON.stringify(body) }),
   deleteCamera: (id: string) => request<void>(`/api/cameras/${id}`, { method: 'DELETE' }),
   assignCamera: (workspaceId: string, cameraId: string) =>
@@ -234,6 +242,8 @@ export const api = {
     }),
   listCameraRecordings: (workspaceId: string, cameraId: string) =>
     request<Recording[]>(`/api/workspaces/${workspaceId}/cameras/${cameraId}/recordings`),
+  deleteRecording: (workspaceId: string, cameraId: string, recordingId: string) =>
+    request<void>(`/api/workspaces/${workspaceId}/cameras/${cameraId}/recordings/${recordingId}`, { method: 'DELETE' }),
 
   // live view
   getLiveConfig: (workspaceId: string) =>
