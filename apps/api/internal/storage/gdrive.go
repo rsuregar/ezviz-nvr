@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -43,4 +44,21 @@ func newGDriveDeleter(config map[string]interface{}) (*gdriveDeleter, error) {
 // addressable the way S3 object keys are.
 func (d *gdriveDeleter) Delete(ctx context.Context, remoteID string) error {
 	return d.service.Files.Delete(remoteID).Context(ctx).Do()
+}
+
+// Stream implements Streamer: Drive has no equivalent of an S3 presigned
+// URL (a file would have to be made "anyone with the link" to get a
+// directly-fetchable URL, which isn't acceptable for private recordings),
+// so playback is relayed through our own server instead using the stored
+// OAuth credentials.
+func (d *gdriveDeleter) Stream(ctx context.Context, remoteID string) (io.ReadCloser, string, error) {
+	resp, err := d.service.Files.Get(remoteID).Context(ctx).Download()
+	if err != nil {
+		return nil, "", err
+	}
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "video/mp4"
+	}
+	return resp.Body, contentType, nil
 }

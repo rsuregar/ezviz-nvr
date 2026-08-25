@@ -4,7 +4,24 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	// go run/go build don't read .env files on their own (that's a
+	// docker-compose/shell feature, not a Go one) — without this, editing
+	// .env and restarting `go run ./cmd/api` silently does nothing. The repo
+	// root .env sits two directories up from apps/api and apps/edge-agent,
+	// so try both "run from repo root" and "run from the app's own dir".
+	// Missing files are fine — real env vars (Docker, CI, a real shell
+	// export) always take precedence and this never overrides them.
+	for _, path := range []string{".env", "../.env", "../../.env"} {
+		if err := godotenv.Load(path); err == nil {
+			break
+		}
+	}
+}
 
 type Config struct {
 	ListenAddr      string

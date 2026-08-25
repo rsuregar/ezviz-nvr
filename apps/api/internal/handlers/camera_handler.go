@@ -8,11 +8,16 @@ import (
 
 // ListWorkspaceCameras returns every camera visible in a workspace
 // (i.e. assigned to it via camera_workspaces), regardless of which site
-// it physically lives at.
+// it physically lives at — including that site's name, so the dashboard
+// can group/filter cameras by location without a second (superadmin-only)
+// call to /api/sites.
 func (h *Handler) ListWorkspaceCameras(c *fiber.Ctx) error {
 	workspaceID := c.Params("workspaceId")
-	var cameras []models.Camera
-	if err := h.DB.Joins("JOIN camera_workspaces cw ON cw.camera_id = cameras.id").
+	var cameras []cameraWithSite
+	if err := h.DB.Table("cameras").
+		Select("cameras.*, sites.name as site_name").
+		Joins("JOIN camera_workspaces cw ON cw.camera_id = cameras.id").
+		Joins("JOIN sites ON sites.id = cameras.site_id").
 		Where("cw.workspace_id = ?", workspaceID).Find(&cameras).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
@@ -69,8 +74,11 @@ type createCameraRequest struct {
 func (h *Handler) CreateCamera(c *fiber.Ctx) error {
 	siteID := c.Params("siteId")
 	var req createCameraRequest
-	if err := c.BodyParser(&req); err != nil || req.Name == "" || req.EzvizSerial == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "name and ezviz_serial required")
+	// ezviz_serial/verification_code are reference-only metadata for now —
+	// nothing in the RTSP-only recording pipeline reads them back (they'd
+	// matter for EZVIZ Cloud API integration, which this deployment skips).
+	if err := c.BodyParser(&req); err != nil || req.Name == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "name required")
 	}
 	if req.ChannelNo == 0 {
 		req.ChannelNo = 1

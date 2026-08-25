@@ -350,13 +350,31 @@ function AuditTab() {
   )
 }
 
+// Common RTSP stream paths across EZVIZ models — varies by generation/codec,
+// so this is a starting point (auto-filled into the RTSP field, still
+// editable) rather than a guarantee it matches every camera.
+const EZVIZ_STREAM_PATHS = [
+  { label: 'Main stream (H.264)', path: '/h264/ch1/main/av_stream' },
+  { label: 'Main stream (path pendek, dok. EZVIZ)', path: '/ch1/main' },
+  { label: 'Sub stream (H.264, hemat bandwidth)', path: '/h264/ch1/sub/av_stream' },
+  { label: 'Main stream (H.265)', path: '/h265/ch1/main/av_stream' },
+  { label: 'Gaya Hikvision', path: '/Streaming/Channels/101' },
+] as const
+
 function SiteCameras({ siteId }: { siteId: string }) {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [serial, setSerial] = useState('')
   const [verCode, setVerCode] = useState('')
+  const [camIp, setCamIp] = useState('')
+  const [streamPath, setStreamPath] = useState<string>(EZVIZ_STREAM_PATHS[0].path)
   const [rtspUrl, setRtspUrl] = useState('')
+
+  function buildRtspUrl() {
+    if (!camIp || !verCode) return
+    setRtspUrl(`rtsp://admin:${verCode}@${camIp}:554${streamPath}`)
+  }
 
   async function load() {
     try {
@@ -378,6 +396,7 @@ function SiteCameras({ siteId }: { siteId: string }) {
       setName('')
       setSerial('')
       setVerCode('')
+      setCamIp('')
       setRtspUrl('')
       await load()
     } catch (err) {
@@ -393,8 +412,17 @@ function SiteCameras({ siteId }: { siteId: string }) {
         {cameras.map((cam) => (
           <div key={cam.id} className="py-2 flex items-center justify-between text-sm">
             <div>
-              <span className="font-medium text-slate-900">{cam.name}</span>{' '}
-              <span className="text-slate-400 font-mono text-xs">{cam.id}</span>
+              <div>
+                <span className="font-medium text-slate-900">{cam.name}</span>{' '}
+                <span className="text-slate-400 font-mono text-xs">{cam.id}</span>
+              </div>
+              <div className="text-xs">
+                {cam.local_rtsp_url ? (
+                  <span className="text-slate-400">RTSP: {cam.local_rtsp_url}</span>
+                ) : (
+                  <span className="text-amber-600">RTSP belum diisi</span>
+                )}
+              </div>
             </div>
             <button
               onClick={async () => {
@@ -410,12 +438,46 @@ function SiteCameras({ siteId }: { siteId: string }) {
         {cameras.length === 0 && <p className="py-2 text-sm text-slate-500">Belum ada kamera di site ini.</p>}
       </div>
 
-      <form onSubmit={onCreate} className="grid grid-cols-2 gap-2 pt-2">
-        <input required placeholder="Nama kamera" value={name} onChange={(e) => setName(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <input required placeholder="EZVIZ serial" value={serial} onChange={(e) => setSerial(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <input placeholder="Verification code" value={verCode} onChange={(e) => setVerCode(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <input placeholder="rtsp://... (opsional, lokal)" value={rtspUrl} onChange={(e) => setRtspUrl(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-        <button type="submit" className="col-span-2 bg-slate-900 text-white rounded px-4 py-1.5 text-sm font-medium">
+      <form onSubmit={onCreate} className="space-y-2 pt-2">
+        <div className="grid grid-cols-2 gap-2">
+          <input required placeholder="Nama kamera" value={name} onChange={(e) => setName(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
+          <input placeholder="EZVIZ serial (opsional, cuma catatan)" value={serial} onChange={(e) => setSerial(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded p-2 space-y-2">
+          <p className="text-xs text-slate-500">Susun otomatis URL RTSP dari IP + verification code (LAN Preview harus sudah diaktifkan di app EZVIZ):</p>
+          <div className="grid grid-cols-3 gap-2">
+            <input placeholder="Verification code" value={verCode} onChange={(e) => setVerCode(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
+            <input placeholder="IP lokal kamera (mis. 192.168.1.50)" value={camIp} onChange={(e) => setCamIp(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
+            <select value={streamPath} onChange={(e) => setStreamPath(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm">
+              {EZVIZ_STREAM_PATHS.map((p) => (
+                <option key={p.path} value={p.path}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={buildRtspUrl}
+            disabled={!camIp || !verCode}
+            className="text-xs bg-slate-200 text-slate-700 rounded px-3 py-1.5 font-medium disabled:opacity-50"
+          >
+            Susun URL RTSP →
+          </button>
+        </div>
+
+        <input
+          placeholder="rtsp://... (opsional, tapi kamera tidak akan direkam kalau kosong)"
+          value={rtspUrl}
+          onChange={(e) => setRtspUrl(e.target.value)}
+          className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
+        />
+        <p className="text-xs text-slate-400">
+          Path stream beda-beda tiap model kamera — kalau URL hasil susun otomatis tidak konek, tes dulu manual pakai VLC/ffprobe, coba pilihan path lain di atas.
+        </p>
+
+        <button type="submit" className="w-full bg-slate-900 text-white rounded px-4 py-1.5 text-sm font-medium">
           Tambah kamera
         </button>
       </form>

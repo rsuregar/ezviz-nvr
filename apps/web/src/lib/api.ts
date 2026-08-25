@@ -35,6 +35,7 @@ export interface Site {
 export interface Camera {
   id: string
   site_id: string
+  site_name?: string
   name: string
   ezviz_serial: string
   local_rtsp_url: string
@@ -111,6 +112,13 @@ export function googleOAuthStartUrl(workspaceId: string, name: string) {
   const token = getAccessToken()
   const params = new URLSearchParams({ name, access_token: token ?? '' })
   return `${API_BASE_URL}/api/workspaces/${workspaceId}/oauth/google/start?${params.toString()}`
+}
+
+// A <video src="..."> can't send an Authorization header, so like the OAuth
+// start link above, this carries the token as a query param instead.
+export function recordingStreamUrl(workspaceId: string, cameraId: string, recordingId: string) {
+  const params = new URLSearchParams({ access_token: getAccessToken() ?? '' })
+  return `${API_BASE_URL}/api/workspaces/${workspaceId}/cameras/${cameraId}/recordings/${recordingId}/stream?${params.toString()}`
 }
 
 class ApiError extends Error {

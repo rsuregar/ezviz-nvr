@@ -51,6 +51,15 @@ func New(h *handlers.Handler, db *gorm.DB) *fiber.App {
 		h.GoogleOAuthStart,
 	)
 
+	// Same reasoning: this is a <video src="..."> target, which can't send
+	// an Authorization header either.
+	api.Get(
+		"/workspaces/:workspaceId/cameras/:cameraId/recordings/:recordingId/stream",
+		middleware.RequireAuthFlexible(h.Cfg.JWTSecret),
+		middleware.RequireWorkspaceRole(db, models.RoleViewer),
+		h.StreamRecording,
+	)
+
 	// --- authenticated users ---
 	authed := api.Group("", middleware.RequireAuth(h.Cfg.JWTSecret))
 	authed.Get("/me", h.Me)

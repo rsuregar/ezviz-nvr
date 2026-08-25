@@ -19,7 +19,12 @@ rtspAuthMethods: [basic]
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
-hlsVariant: mpegts
+# mpegts only supports H.264 — EZVIZ cameras commonly stream H.265/HEVC
+# (confirmed: MediaMTX rejects it with "the MPEG-TS variant of HLS supports
+# H264 video only"). lowLatency (LL-HLS) is fmp4-based too (so it also
+# supports H.265) but buffers 200ms "parts" instead of full 1s segments —
+# MediaMTX's own default, and meaningfully lower latency than plain fmp4.
+hlsVariant: lowLatency
 
 webrtc: no
 srt: no

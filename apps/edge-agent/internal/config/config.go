@@ -4,7 +4,20 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	// go run doesn't read .env files on its own — without this, editing
+	// .env and restarting `go run ./cmd/agent` silently does nothing.
+	// Missing files are fine, and real env vars always take precedence.
+	for _, path := range []string{".env", "../.env", "../../.env"} {
+		if err := godotenv.Load(path); err == nil {
+			break
+		}
+	}
+}
 
 type Config struct {
 	APIBaseURL     string
