@@ -64,6 +64,7 @@ function RecordingsPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Rekaman</h1>
           <div className="flex items-center gap-2">
             <select
+              aria-label="Pilih kamera"
               value={selectedCameraId}
               onChange={(e) => setSelectedCameraId(e.target.value)}
               className="border border-slate-300 rounded px-3 py-2 text-sm"
@@ -84,13 +85,14 @@ function RecordingsPage() {
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
         {selected && (
           <div className="bg-black rounded-lg overflow-hidden">
             <video
               key={selected.id}
               src={recordingStreamUrl(workspaceId, selectedCameraId, selected.id)}
+              aria-label={`Rekaman ${new Date(selected.started_at).toLocaleString('id-ID')}`}
               controls
               autoPlay
               className="w-full max-h-[70vh]"
@@ -117,17 +119,22 @@ function RecordingsPage() {
                     key={rec.id}
                     className={`flex items-center justify-between text-sm hover:bg-slate-50 ${selected?.id === rec.id ? 'bg-slate-50' : ''}`}
                   >
-                    <button onClick={() => setSelected(rec)} className="flex-1 text-left px-4 py-3">
+                    <button
+                      onClick={() => setSelected(rec)}
+                      aria-current={selected?.id === rec.id ? 'true' : undefined}
+                      className="flex-1 text-left px-4 py-3"
+                    >
                       <span className="text-slate-900">
                         {new Date(rec.started_at).toLocaleTimeString('id-ID')}
                         {rec.ended_at && ` – ${new Date(rec.ended_at).toLocaleTimeString('id-ID')}`}
                       </span>
-                      <span className="text-slate-400 ml-2">{formatSize(rec.size_bytes)}</span>
+                      <span className="text-slate-500 ml-2">{formatSize(rec.size_bytes)}</span>
                     </button>
                     <button
                       onClick={() => deleteRecording(rec)}
                       className="text-xs text-red-600 px-4"
                       title="Hapus rekaman"
+                      aria-label={`Hapus rekaman ${new Date(rec.started_at).toLocaleTimeString('id-ID')}`}
                     >
                       Hapus
                     </button>

@@ -112,6 +112,23 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
 
   useImperativeHandle(ref, () => ({ requestFullscreen: toggleFullscreen }))
 
+  // Roving tabindex: the parent grid tracks which tile is "focused" for
+  // D-pad/arrow-key purposes, but that was purely a CSS ring — a screen
+  // reader or a plain Tab press had no way to reach an individual tile at
+  // all, since nothing here ever received real DOM focus. Syncing real
+  // focus to whichever tile the grid marks as focused makes Tab order and
+  // the AT's notion of "current item" match what's visually highlighted.
+  useEffect(() => {
+    if (focused) containerRef.current?.focus()
+  }, [focused])
+
+  function onContainerKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggleFullscreen()
+    }
+  }
+
   function toggleMute(e: React.MouseEvent) {
     e.stopPropagation()
     setMuted((m) => !m)
@@ -174,13 +191,17 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
     <div
       ref={containerRef}
       onClick={toggleFullscreen}
-      className={`relative bg-black rounded-lg overflow-hidden w-full h-full cursor-pointer ${
+      onKeyDown={onContainerKeyDown}
+      role="group"
+      aria-label={`${camera.name}, ${state === 'live' ? 'sedang live' : state === 'loading' ? 'menghubungkan' : 'kamera offline'}`}
+      tabIndex={focused ? 0 : -1}
+      className={`relative bg-black rounded-lg overflow-hidden w-full h-full cursor-pointer focus:outline-none ${
         focused ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-50' : ''
       }`}
     >
       <video ref={videoRef} autoPlay muted={muted} playsInline className="w-full h-full object-contain" />
       {state !== 'live' && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div aria-hidden="true" className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-white/70 text-sm">{state === 'loading' ? 'Menghubungkan…' : 'Kamera sedang offline'}</span>
         </div>
       )}
@@ -208,6 +229,7 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
           <button
             onClick={togglePause}
             title={isPaused ? 'Lanjutkan' : 'Jeda'}
+            aria-label={isPaused ? 'Lanjutkan' : 'Jeda'}
             className={`text-white/90 hover:text-white hover:bg-white/10 rounded-full transition-colors ${isFullscreen ? 'p-3' : 'p-1.5'}`}
           >
             {isPaused ? <PlayIcon size={isFullscreen ? 28 : 18} /> : <PauseIcon size={isFullscreen ? 28 : 18} />}
@@ -215,6 +237,7 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
           <button
             onClick={toggleMute}
             title={muted ? 'Suarakan' : 'Bisukan'}
+            aria-label={muted ? 'Suarakan' : 'Bisukan'}
             className={`text-white/90 hover:text-white hover:bg-white/10 rounded-full transition-colors ${isFullscreen ? 'p-3' : 'p-1.5'}`}
           >
             {muted ? <MuteIcon size={isFullscreen ? 28 : 18} /> : <UnmuteIcon size={isFullscreen ? 28 : 18} />}
@@ -223,6 +246,7 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
             <button
               onClick={toggleResolution}
               title="Atur resolusi"
+              aria-label={`Atur resolusi, saat ini ${resolution === 'hd' ? 'HD' : 'SD'}`}
               className={`text-white/90 hover:text-white hover:bg-white/10 rounded font-semibold transition-colors ${
                 isFullscreen ? 'text-sm px-2.5 py-1.5' : 'text-[10px] px-1.5 py-0.5'
               }`}
@@ -234,6 +258,7 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
             <button
               onClick={togglePiP}
               title={isPiP ? 'Keluar Picture-in-Picture' : 'Picture-in-Picture'}
+              aria-label={isPiP ? 'Keluar Picture-in-Picture' : 'Picture-in-Picture'}
               className={`text-white/90 hover:text-white hover:bg-white/10 rounded-full transition-colors ${isFullscreen ? 'p-3' : 'p-1.5'}`}
             >
               <PiPIcon size={isFullscreen ? 28 : 18} />
@@ -242,6 +267,7 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
           <button
             onClick={takeSnapshot}
             title="Ambil snapshot"
+            aria-label="Ambil snapshot"
             className={`text-white/90 hover:text-white hover:bg-white/10 rounded-full transition-colors ${isFullscreen ? 'p-3' : 'p-1.5'}`}
           >
             <CameraIcon size={isFullscreen ? 28 : 18} />
@@ -254,7 +280,7 @@ export const CameraTile = forwardRef<CameraTileHandle, Props>(function CameraTil
 
 function MuteIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
       <line x1="23" y1="9" x2="17" y2="15" />
       <line x1="17" y1="9" x2="23" y2="15" />
@@ -264,7 +290,7 @@ function MuteIcon({ size = 18 }: { size?: number }) {
 
 function UnmuteIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
@@ -274,7 +300,7 @@ function UnmuteIcon({ size = 18 }: { size?: number }) {
 
 function PauseIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <rect x="6" y="4" width="4" height="16" />
       <rect x="14" y="4" width="4" height="16" />
     </svg>
@@ -283,7 +309,7 @@ function PauseIcon({ size = 18 }: { size?: number }) {
 
 function PlayIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <polygon points="5 3 19 12 5 21 5 3" />
     </svg>
   )
@@ -291,7 +317,7 @@ function PlayIcon({ size = 18 }: { size?: number }) {
 
 function PiPIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="2" y="4" width="20" height="16" rx="2" />
       <rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor" />
     </svg>
@@ -300,7 +326,7 @@ function PiPIcon({ size = 18 }: { size?: number }) {
 
 function CameraIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
       <circle cx="12" cy="13" r="4" />
     </svg>

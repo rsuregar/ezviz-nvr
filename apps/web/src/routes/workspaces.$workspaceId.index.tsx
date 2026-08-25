@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { AppShell } from '#/components/AppShell'
 import { SearchPicker } from '#/components/SearchPicker'
+import { TabList, TabPanel } from '#/components/Tabs'
 import {
   api,
   ApiError,
@@ -18,10 +19,17 @@ import { useAuth } from '#/lib/auth'
 export const Route = createFileRoute('/workspaces/$workspaceId/')({ component: WorkspacePage })
 
 type Tab = 'cameras' | 'storage' | 'members' | 'notifications'
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'cameras', label: 'Kamera' },
+  { id: 'storage', label: 'Storage' },
+  { id: 'members', label: 'Anggota' },
+  { id: 'notifications', label: 'Notifikasi' },
+]
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
   const [tab, setTab] = useState<Tab>('cameras')
+  const idPrefix = useId()
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [members, setMembers] = useState<Membership[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -67,26 +75,22 @@ function WorkspacePage() {
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
-        <div className="flex gap-1 border-b border-slate-200">
-          {(['cameras', 'storage', 'members', 'notifications'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-                tab === t ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500'
-              }`}
-            >
-              {t === 'cameras' ? 'Kamera' : t === 'storage' ? 'Storage' : t === 'members' ? 'Anggota' : 'Notifikasi'}
-            </button>
-          ))}
-        </div>
+        <TabList idPrefix={idPrefix} label="Bagian workspace" tabs={TABS} active={tab} onChange={setTab} />
 
-        {tab === 'cameras' && <CamerasTab workspaceId={workspaceId} />}
-        {tab === 'storage' && <StorageTab workspaceId={workspaceId} />}
-        {tab === 'members' && <MembersTab workspaceId={workspaceId} members={members} onChange={loadWorkspace} />}
-        {tab === 'notifications' && <NotificationsTab workspaceId={workspaceId} />}
+        <TabPanel id={`${idPrefix}-panel-cameras`} tabId={`${idPrefix}-tab-cameras`} active={tab === 'cameras'}>
+          <CamerasTab workspaceId={workspaceId} />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-storage`} tabId={`${idPrefix}-tab-storage`} active={tab === 'storage'}>
+          <StorageTab workspaceId={workspaceId} />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-members`} tabId={`${idPrefix}-tab-members`} active={tab === 'members'}>
+          <MembersTab workspaceId={workspaceId} members={members} onChange={loadWorkspace} />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-notifications`} tabId={`${idPrefix}-tab-notifications`} active={tab === 'notifications'}>
+          <NotificationsTab workspaceId={workspaceId} />
+        </TabPanel>
       </div>
     </AppShell>
   )
@@ -141,7 +145,7 @@ function CamerasTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {cameras.map((cam) => (
@@ -153,7 +157,7 @@ function CamerasTab({ workspaceId }: { workspaceId: string }) {
               </div>
               <div className="text-xs mt-0.5">
                 {cam.local_rtsp_url ? (
-                  <span className="text-slate-400">RTSP: {cam.local_rtsp_url}</span>
+                  <span className="text-slate-500">RTSP: {cam.local_rtsp_url}</span>
                 ) : (
                   <span className="text-amber-600">
                     RTSP belum diisi — kamera ini tidak akan pernah direkam/dicoba oleh agent
@@ -164,6 +168,7 @@ function CamerasTab({ workspaceId }: { workspaceId: string }) {
             <div className="flex items-center gap-3">
               <StatusBadge status={cam.status} />
               <select
+                aria-label={`Storage untuk ${cam.name}`}
                 value={cam.recording_storage_target_id ?? ''}
                 onChange={async (e) => {
                   try {
@@ -255,7 +260,7 @@ function StorageTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       {justConnectedGDrive && (
         <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
           Google Drive berhasil terhubung.
@@ -269,6 +274,7 @@ function StorageTab({ workspaceId }: { workspaceId: string }) {
         </p>
         <div className="flex gap-2">
           <input
+            aria-label="Nama koneksi Google Drive"
             placeholder="Nama koneksi"
             value={gdriveName}
             onChange={(e) => setGdriveName(e.target.value)}
@@ -288,7 +294,7 @@ function StorageTab({ workspaceId }: { workspaceId: string }) {
           <div key={t.id} className="p-4 flex items-center justify-between">
             <div>
               <div className="font-medium text-slate-900">
-                {t.name} <span className="text-xs text-slate-400">({t.type})</span>
+                {t.name} <span className="text-xs text-slate-500">({t.type})</span>
               </div>
               <div className="text-sm text-slate-500">Retensi {t.retain_days} hari</div>
             </div>
@@ -310,23 +316,35 @@ function StorageTab({ workspaceId }: { workspaceId: string }) {
         <h2 className="font-medium text-slate-900 text-sm">Tambah storage target manual (S3/MinIO, atau Google Drive fallback)</h2>
         <input
           required
+          aria-label="Nama storage target"
           placeholder="Nama (mis. MinIO Utama)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
         />
-        <select value={type} onChange={(e) => setType(e.target.value as typeof type)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        <select
+          aria-label="Tipe storage"
+          value={type}
+          onChange={(e) => setType(e.target.value as typeof type)}
+          className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+        >
           <option value="minio">MinIO</option>
           <option value="s3">Amazon S3 (S3-compatible)</option>
           <option value="gdrive">Google Drive</option>
         </select>
-        <textarea
-          value={configText}
-          onChange={(e) => setConfigText(e.target.value)}
-          rows={6}
-          className="w-full border border-slate-300 rounded px-3 py-2 text-xs font-mono"
-        />
-        <p className="text-xs text-slate-400">
+        <div className="space-y-1">
+          <label htmlFor="storage-config-json" className="text-xs font-medium text-slate-700">
+            Konfigurasi (JSON)
+          </label>
+          <textarea
+            id="storage-config-json"
+            value={configText}
+            onChange={(e) => setConfigText(e.target.value)}
+            rows={6}
+            className="w-full border border-slate-300 rounded px-3 py-2 text-xs font-mono"
+          />
+        </div>
+        <p className="text-xs text-slate-500">
           MinIO/S3: endpoint, access_key, secret_key, bucket, use_ssl. Google Drive: client_id, client_secret, refresh_token,
           folder_id.
         </p>
@@ -378,7 +396,7 @@ function MembersTab({
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {members.map((m) => (
@@ -416,6 +434,7 @@ function MembersTab({
               <form onSubmit={onManualAdd} className="flex gap-2">
                 <input
                   required
+                  aria-label="User ID"
                   placeholder="User ID (minta ke superadmin)"
                   value={manualUserId}
                   onChange={(e) => setManualUserId(e.target.value)}
@@ -428,6 +447,7 @@ function MembersTab({
             )}
           </div>
           <select
+            aria-label="Role anggota baru"
             value={role}
             onChange={(e) => setRole(e.target.value as typeof role)}
             className="border border-slate-300 rounded px-2 py-2 text-sm"
@@ -480,7 +500,7 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {channels.map((ch) => (
@@ -488,7 +508,7 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
             <div>
               <div className="font-medium text-slate-900">{ch.name}</div>
               <div className="text-sm text-slate-500">{ch.webhook_url}</div>
-              <div className="text-xs text-slate-400">{ch.events.split(',').join(', ')}</div>
+              <div className="text-xs text-slate-500">{ch.events.split(',').join(', ')}</div>
             </div>
             <button
               onClick={async () => {
@@ -512,6 +532,7 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
         </p>
         <input
           required
+          aria-label="Nama channel notifikasi"
           placeholder="Nama (mis. Slack #cctv-alerts)"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -520,6 +541,7 @@ function NotificationsTab({ workspaceId }: { workspaceId: string }) {
         <input
           required
           type="url"
+          aria-label="Webhook URL"
           placeholder="https://hooks.slack.com/services/..."
           value={webhookUrl}
           onChange={(e) => setWebhookUrl(e.target.value)}

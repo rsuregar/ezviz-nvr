@@ -1,17 +1,25 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { AppShell } from '#/components/AppShell'
+import { TabList, TabPanel } from '#/components/Tabs'
 import { api, ApiError, type AuditLogEntry, type Camera, type Site, type User } from '#/lib/api'
 import { useAuth } from '#/lib/auth'
 
 export const Route = createFileRoute('/admin')({ component: AdminPage })
 
 type Tab = 'users' | 'sites' | 'health' | 'audit'
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'users', label: 'Users' },
+  { id: 'sites', label: 'Sites & Kamera' },
+  { id: 'health', label: 'Health' },
+  { id: 'audit', label: 'Audit Log' },
+]
 
 function AdminPage() {
   const { user, loading } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('users')
+  const idPrefix = useId()
 
   useEffect(() => {
     if (!loading && user && !user.is_superadmin) navigate({ to: '/' })
@@ -22,24 +30,20 @@ function AdminPage() {
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
 
-        <div className="flex gap-1 border-b border-slate-200">
-          {(['users', 'sites', 'health', 'audit'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-                tab === t ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500'
-              }`}
-            >
-              {t === 'users' ? 'Users' : t === 'sites' ? 'Sites & Kamera' : t === 'health' ? 'Health' : 'Audit Log'}
-            </button>
-          ))}
-        </div>
+        <TabList idPrefix={idPrefix} label="Bagian admin" tabs={TABS} active={tab} onChange={setTab} />
 
-        {tab === 'users' && <UsersTab />}
-        {tab === 'sites' && <SitesTab />}
-        {tab === 'health' && <HealthTab />}
-        {tab === 'audit' && <AuditTab />}
+        <TabPanel id={`${idPrefix}-panel-users`} tabId={`${idPrefix}-tab-users`} active={tab === 'users'}>
+          <UsersTab />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-sites`} tabId={`${idPrefix}-tab-sites`} active={tab === 'sites'}>
+          <SitesTab />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-health`} tabId={`${idPrefix}-tab-health`} active={tab === 'health'}>
+          <HealthTab />
+        </TabPanel>
+        <TabPanel id={`${idPrefix}-panel-audit`} tabId={`${idPrefix}-tab-audit`} active={tab === 'audit'}>
+          <AuditTab />
+        </TabPanel>
       </div>
     </AppShell>
   )
@@ -81,14 +85,14 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {users.map((u) => (
           <div key={u.id} className="p-4 flex items-center justify-between">
             <div>
               <div className="font-medium text-slate-900">
-                {u.name} <span className="text-slate-400">({u.email})</span>
+                {u.name} <span className="text-slate-500">({u.email})</span>
               </div>
               <div className="text-xs text-slate-500 font-mono">{u.id}</div>
             </div>
@@ -110,9 +114,9 @@ function UsersTab() {
 
       <form onSubmit={onCreate} className="bg-white border border-slate-200 rounded-lg p-4 max-w-md space-y-3">
         <h2 className="font-medium text-slate-900 text-sm">Buat user baru</h2>
-        <input required placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
-        <input required type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
-        <input required type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        <input required aria-label="Nama" placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        <input required type="email" aria-label="Email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        <input required type="password" aria-label="Password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={isSuperAdmin} onChange={(e) => setIsSuperAdmin(e.target.checked)} />
           Superadmin (bisa kelola semua workspace)
@@ -158,7 +162,7 @@ function SitesTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       {newAgentToken && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm space-y-1">
@@ -181,7 +185,12 @@ function SitesTab() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={() => setExpandedSite(expandedSite === s.id ? null : s.id)} className="text-xs text-slate-600">
+                <button
+                  onClick={() => setExpandedSite(expandedSite === s.id ? null : s.id)}
+                  aria-expanded={expandedSite === s.id}
+                  aria-controls={`site-cameras-${s.id}`}
+                  className="text-xs text-slate-600"
+                >
                   {expandedSite === s.id ? 'Tutup' : 'Kelola kamera'}
                 </button>
                 <button
@@ -204,7 +213,7 @@ function SitesTab() {
                 </button>
               </div>
             </div>
-            {expandedSite === s.id && <SiteCameras siteId={s.id} />}
+            {expandedSite === s.id && <SiteCameras siteId={s.id} panelId={`site-cameras-${s.id}`} />}
           </div>
         ))}
         {sites.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada site.</p>}
@@ -215,6 +224,7 @@ function SitesTab() {
         <div className="flex gap-2">
           <input
             required
+            aria-label="Nama site (mis. Gedung A)"
             placeholder="Nama site (mis. Gedung A)"
             value={siteName}
             onChange={(e) => setSiteName(e.target.value)}
@@ -264,7 +274,7 @@ function HealthTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Site online" value={`${sitesOnline} / ${sites.length}`} />
@@ -328,20 +338,20 @@ function AuditTab() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
         {entries.map((e) => (
           <div key={e.id} className="p-3 text-sm flex items-start justify-between gap-4">
             <div>
               <span className="font-medium text-slate-900">{e.actor_email || 'system'}</span>{' '}
               <span className="text-slate-600">{e.action}</span>{' '}
-              <span className="text-slate-400">
+              <span className="text-slate-500">
                 {e.target_type}
                 {e.target_id ? `:${e.target_id.slice(0, 8)}` : ''}
               </span>
               {e.detail && <span className="text-slate-500"> — {e.detail}</span>}
             </div>
-            <span className="text-xs text-slate-400 whitespace-nowrap">{new Date(e.created_at).toLocaleString('id-ID')}</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(e.created_at).toLocaleString('id-ID')}</span>
           </div>
         ))}
         {entries.length === 0 && <p className="p-4 text-sm text-slate-500">Belum ada aktivitas tercatat.</p>}
@@ -361,7 +371,7 @@ const EZVIZ_STREAM_PATHS = [
   { label: 'Gaya Hikvision', path: '/Streaming/Channels/101' },
 ] as const
 
-function SiteCameras({ siteId }: { siteId: string }) {
+function SiteCameras({ siteId, panelId }: { siteId: string; panelId: string }) {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -421,8 +431,12 @@ function SiteCameras({ siteId }: { siteId: string }) {
   }
 
   return (
-    <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100 space-y-3">
-      {error && <p className="text-sm text-red-600 pt-3">{error}</p>}
+    <div id={panelId} className="px-4 pb-4 bg-slate-50 border-t border-slate-100 space-y-3">
+      {error && (
+        <p role="alert" className="text-sm text-red-600 pt-3">
+          {error}
+        </p>
+      )}
 
       <div className="divide-y divide-slate-200">
         {cameras.map((cam) => (
@@ -430,15 +444,15 @@ function SiteCameras({ siteId }: { siteId: string }) {
             <div>
               <div>
                 <span className="font-medium text-slate-900">{cam.name}</span>{' '}
-                <span className="text-slate-400 font-mono text-xs">{cam.id}</span>
+                <span className="text-slate-500 font-mono text-xs">{cam.id}</span>
               </div>
               <div className="text-xs">
                 {cam.local_rtsp_url ? (
-                  <span className="text-slate-400">RTSP: {cam.local_rtsp_url}</span>
+                  <span className="text-slate-500">RTSP: {cam.local_rtsp_url}</span>
                 ) : (
                   <span className="text-amber-600">RTSP belum diisi</span>
                 )}
-                {cam.local_rtsp_url_sub && <span className="text-slate-400"> · sub-stream ada</span>}
+                {cam.local_rtsp_url_sub && <span className="text-slate-500"> · sub-stream ada</span>}
               </div>
             </div>
             <button
@@ -457,16 +471,46 @@ function SiteCameras({ siteId }: { siteId: string }) {
 
       <form onSubmit={onCreate} className="space-y-2 pt-2">
         <div className="grid grid-cols-2 gap-2">
-          <input required placeholder="Nama kamera" value={name} onChange={(e) => setName(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-          <input placeholder="EZVIZ serial (opsional, cuma catatan)" value={serial} onChange={(e) => setSerial(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
+          <input
+            required
+            aria-label="Nama kamera"
+            placeholder="Nama kamera"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+          />
+          <input
+            aria-label="EZVIZ serial (opsional, cuma catatan)"
+            placeholder="EZVIZ serial (opsional, cuma catatan)"
+            value={serial}
+            onChange={(e) => setSerial(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+          />
         </div>
 
         <div className="bg-white border border-slate-200 rounded p-2 space-y-2">
           <p className="text-xs text-slate-500">Susun otomatis URL RTSP dari IP + verification code (LAN Preview harus sudah diaktifkan di app EZVIZ):</p>
           <div className="grid grid-cols-3 gap-2">
-            <input placeholder="Verification code" value={verCode} onChange={(e) => setVerCode(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-            <input placeholder="IP lokal kamera (mis. 192.168.1.50)" value={camIp} onChange={(e) => setCamIp(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm" />
-            <select value={streamPath} onChange={(e) => setStreamPath(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm">
+            <input
+              aria-label="Verification code"
+              placeholder="Verification code"
+              value={verCode}
+              onChange={(e) => setVerCode(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            />
+            <input
+              aria-label="IP lokal kamera"
+              placeholder="IP lokal kamera (mis. 192.168.1.50)"
+              value={camIp}
+              onChange={(e) => setCamIp(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            />
+            <select
+              aria-label="Path stream RTSP"
+              value={streamPath}
+              onChange={(e) => setStreamPath(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            >
               {EZVIZ_STREAM_PATHS.map((p) => (
                 <option key={p.path} value={p.path}>
                   {p.label}
@@ -485,12 +529,13 @@ function SiteCameras({ siteId }: { siteId: string }) {
         </div>
 
         <input
+          aria-label="URL RTSP stream utama"
           placeholder="rtsp://... (opsional, tapi kamera tidak akan direkam kalau kosong)"
           value={rtspUrl}
           onChange={(e) => setRtspUrl(e.target.value)}
           className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
         />
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           Path stream beda-beda tiap model kamera — kalau URL hasil susun otomatis tidak konek, tes dulu manual pakai VLC/ffprobe, coba pilihan path lain di atas.
         </p>
 
@@ -507,6 +552,7 @@ function SiteCameras({ siteId }: { siteId: string }) {
             Susun URL Sub-stream →
           </button>
           <input
+            aria-label="URL RTSP sub-stream"
             placeholder="rtsp://... sub-stream (opsional)"
             value={rtspUrlSub}
             onChange={(e) => setRtspUrlSub(e.target.value)}

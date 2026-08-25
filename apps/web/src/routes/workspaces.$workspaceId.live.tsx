@@ -132,9 +132,10 @@ function LivePage() {
   return (
     <AppShell fullWidth>
       <div className="h-full flex gap-2">
-        <div className="w-44 shrink-0 bg-white rounded-lg border border-slate-200 overflow-y-auto p-2 space-y-1">
+        <nav aria-label="Filter site" className="w-44 shrink-0 bg-white rounded-lg border border-slate-200 overflow-y-auto p-2 space-y-1">
           <button
             onClick={() => goToSite(null)}
+            aria-current={selectedSite === null ? 'true' : undefined}
             className={`w-full text-left px-3 py-2 rounded text-sm font-medium ${
               selectedSite === null ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
             }`}
@@ -145,6 +146,7 @@ function LivePage() {
             <button
               key={site}
               onClick={() => goToSite(site)}
+              aria-current={selectedSite === site ? 'true' : undefined}
               className={`w-full text-left px-3 py-2 rounded text-sm truncate ${
                 selectedSite === site ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
               }`}
@@ -152,13 +154,13 @@ function LivePage() {
               {site}
             </button>
           ))}
-          {sites.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">Belum ada site</p>}
-        </div>
+          {sites.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">Belum ada site</p>}
+        </nav>
 
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold text-slate-900">{selectedSite ?? 'Semua Kamera'}</h1>
-            <div className="flex gap-1">
+            <div role="group" aria-label="Ukuran grid" className="flex gap-1">
               {GRID_SIZES.map((g) => (
                 <button
                   key={g}
@@ -166,6 +168,8 @@ function LivePage() {
                     setGrid(g)
                     setPage(0)
                   }}
+                  aria-pressed={grid === g}
+                  aria-label={`Grid ${GRID_LABELS[g]}`}
                   className={`px-3 py-1.5 text-sm rounded border ${
                     grid === g ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300'
                   }`}
@@ -176,10 +180,16 @@ function LivePage() {
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
           {liveConfig && (
-            <div className="flex-1 min-h-0 relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+            <div
+              role="region"
+              aria-label={`Grid kamera, halaman ${clampedPage + 1} dari ${totalPages}`}
+              className="flex-1 min-h-0 relative"
+              onTouchStart={onTouchStart}
+              onTouchEnd={onTouchEnd}
+            >
               <div
                 className="grid gap-1 h-full"
                 style={{ gridTemplateColumns: `repeat(${dim}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${dim}, minmax(0, 1fr))` }}
@@ -196,7 +206,7 @@ function LivePage() {
                   />
                 ))}
                 {Array.from({ length: Math.max(0, grid - pageCameras.length) }).map((_, i) => (
-                  <div key={`empty-${i}`} className="bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-sm">
+                  <div key={`empty-${i}`} aria-hidden="true" className="bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 text-sm">
                     Slot kosong
                   </div>
                 ))}
@@ -209,6 +219,7 @@ function LivePage() {
                     disabled={clampedPage === 0}
                     className="absolute left-1 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 disabled:opacity-30 text-white rounded-full p-2"
                     title="Sebelumnya"
+                    aria-label="Halaman kamera sebelumnya"
                   >
                     <ChevronLeft />
                   </button>
@@ -217,10 +228,11 @@ function LivePage() {
                     disabled={clampedPage === totalPages - 1}
                     className="absolute right-1 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 disabled:opacity-30 text-white rounded-full p-2"
                     title="Selanjutnya"
+                    aria-label="Halaman kamera selanjutnya"
                   >
                     <ChevronRight />
                   </button>
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-2 py-1 rounded-full">
+                  <div aria-hidden="true" className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-2 py-1 rounded-full">
                     {clampedPage + 1} / {totalPages} · geser untuk kamera lain
                   </div>
                 </>
@@ -237,7 +249,7 @@ function LivePage() {
 
 function ChevronLeft() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="15 18 9 12 15 6" />
     </svg>
   )
@@ -245,7 +257,7 @@ function ChevronLeft() {
 
 function ChevronRight() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="9 18 15 12 9 6" />
     </svg>
   )
